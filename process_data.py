@@ -11,7 +11,7 @@ def main():
         print(f"数据目录不存在: {DATA_DIR}")
         print("请创建数据目录并放入PDF、PPTX、DOCX或TXT文件")
         return
-
+    print("Data Directory: ", DATA_DIR)
     # 初始化组件
     loader = DocumentLoader(
         data_dir=DATA_DIR,
@@ -25,7 +25,8 @@ def main():
     if not documents:
         print("未找到任何文档")
         return
-
+    print("Documents: ", documents)
+    print("Data Load Successful")
     # 切分文档
     chunks = splitter.split_documents(documents)
 
