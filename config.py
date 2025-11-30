@@ -20,6 +20,8 @@ COLLECTION_NAME = os.getenv("COLLECTION_NAME", "")
 # 文本处理配置
 CHUNK_SIZE = int(os.getenv("CHUNK_SIZE", "1000"))
 CHUNK_OVERLAP = int(os.getenv("CHUNK_OVERLAP", "200"))
+SIZE_ERROR = int(os.getenv("SIZE_ERROR", "100"))
+OVERLAP_ERROR = int(os.getenv("OVERLAP_ERROR", "20"))
 MAX_TOKENS = int(os.getenv("MAX_TOKENS", "4096"))
 
 # RAG配置

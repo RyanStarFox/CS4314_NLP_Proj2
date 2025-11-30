@@ -3,7 +3,7 @@ from document_loader import DocumentLoader
 from text_splitter import TextSplitter
 from vector_store import VectorStore
 
-from config import DATA_DIR, CHUNK_SIZE, CHUNK_OVERLAP, VECTOR_DB_PATH
+from config import DATA_DIR, CHUNK_SIZE, CHUNK_OVERLAP, SIZE_ERROR, OVERLAP_ERROR, VECTOR_DB_PATH
 
 
 def main():
@@ -16,7 +16,7 @@ def main():
     loader = DocumentLoader(
         data_dir=DATA_DIR,
     )
-    splitter = TextSplitter(chunk_size=CHUNK_SIZE, chunk_overlap=CHUNK_OVERLAP)
+    splitter = TextSplitter(chunk_size=CHUNK_SIZE, chunk_overlap=CHUNK_OVERLAP, size_error=SIZE_ERROR, overlap_error=OVERLAP_ERROR)
     vector_store = VectorStore(db_path=VECTOR_DB_PATH)
     vector_store.clear_collection()
 
@@ -25,15 +25,14 @@ def main():
     if not documents:
         print("未找到任何文档")
         return
-    print("Documents: ", documents)
-    print("Data Load Successful")
+    print("========== Data Load Successful ==========")
     # 切分文档
     chunks = splitter.split_documents(documents)
-
+    print("========== Text Split Successful ==========")
     # 存储到向量数据库
     vector_store.add_documents(chunks)
-    
-    print("\n数据处理完成！可以运行main.py开始对话")
+    print("========== Vector Store Successful ==========")
+    print("\n========== Data Processing Successful ==========")
 
 
 if __name__ == "__main__":
