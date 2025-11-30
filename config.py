@@ -7,11 +7,11 @@ load_dotenv()
 # API配置
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 OPENAI_API_BASE = os.getenv("OPENAI_API_BASE", "")
-MODEL_NAME = os.getenv("MODEL_NAME", "")
-OPENAI_EMBEDDING_MODEL = os.getenv("OPENAI_EMBEDDING_MODEL", "")
+MODEL_NAME = os.getenv("MODEL_NAME", "qwen3-omni-flash")
+OPENAI_EMBEDDING_MODEL = os.getenv("OPENAI_EMBEDDING_MODEL", "text-embedding-v4")
 
 # 数据目录配置
-DATA_DIR = os.getenv("DATA_DIR", "")
+DATA_DIR = os.getenv("DATA_DIR", "./data")
 
 # 向量数据库配置
 VECTOR_DB_PATH = os.getenv("VECTOR_DB_PATH", "./vector_db")
