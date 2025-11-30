@@ -48,7 +48,13 @@ class VectorStore:
         TODO: 使用OpenAI API获取文本的embedding向量
 
         """
-        pass
+        # 调用OpenAI API获取embedding
+        response = self.client.embeddings.create(
+            model=OPENAI_EMBEDDING_MODEL,
+            input=text
+        )
+        # 返回embedding向量
+        return response.data[0].embedding
 
     def add_documents(self, chunks: List[Dict[str, str]]) -> None:
         """添加文档块到向量数据库
@@ -59,7 +65,53 @@ class VectorStore:
         3. 获取文档块元数据
         5. 打印添加进度
         """
-        pass
+        if not chunks:
+            return
+        documents = []
+        embeddings = []
+        metadatas = []
+        ids = []
+
+        # 遍历文档块，准备数据
+        for chunk in tqdm(chunks, desc="添加文档到向量数据库", unit="块"):
+            # 获取文档块内容
+            content = chunk.get("content", "")
+            if not content:
+                continue
+
+            # 获取文档块元数据
+            metadata = {
+                "filename": chunk.get("filename", "unknown"),
+                "filepath": chunk.get("filepath", ""),
+                "filetype": chunk.get("filetype", ""),
+                "page_number": str(chunk.get("page_number", 0)),
+                "chunk_id": str(chunk.get("chunk_id", 0)),
+            }
+
+            # 生成唯一ID：包含filename、page_number和chunk_id以确保唯一性
+            chunk_id = chunk.get("chunk_id", 0)
+            page_number = chunk.get("page_number", 0)
+            filename = chunk.get("filename", "unknown")
+            # 对于PDF和PPT，page_number很重要；对于其他文件，page_number通常是0
+            unique_id = f"{filename}_p{page_number}_c{chunk_id}"
+
+            # 获取embedding向量
+            embedding = self.get_embedding(content)
+
+            documents.append(content)
+            embeddings.append(embedding)
+            metadatas.append(metadata)
+            ids.append(unique_id)
+
+        # 批量添加到ChromaDB
+        if documents:
+            self.collection.add(
+                documents=documents,
+                embeddings=embeddings,
+                metadatas=metadatas,
+                ids=ids
+            )
+            print(f"\n成功添加 {len(documents)} 个文档块到向量数据库")
 
     def search(self, query: str, top_k: int = TOP_K) -> List[Dict]:
         """搜索相关文档
@@ -73,8 +125,13 @@ class VectorStore:
            - metadata: 元数据（文件名、页码等）
         4. 返回格式化的结果列表
         """
-
-        pass
+        embedding = self.get_embedding(query)
+        results = self.collection.query(
+            query_embeddings=embedding,
+            n_results=top_k,
+            include=["documents", "metadatas", "distances"]
+        )
+        return results
 
     def clear_collection(self) -> None:
         """清空collection"""
