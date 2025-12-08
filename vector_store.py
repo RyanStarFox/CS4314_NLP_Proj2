@@ -15,6 +15,7 @@ from config import (
     TOP_K,
 )
 
+import hashlib
 
 class VectorStore:
 
@@ -88,14 +89,17 @@ class VectorStore:
                 "chunk_id": str(chunk.get("chunk_id", 0)),
             }
 
-            # 生成唯一ID：包含filename、page_number和chunk_id以确保唯一性
+            # === 修改开始 ===
             chunk_id = chunk.get("chunk_id", 0)
             page_number = chunk.get("page_number", 0)
             filename = chunk.get("filename", "unknown")
-            # 对于PDF和PPT，page_number很重要；对于其他文件，page_number通常是0
-            unique_id = f"{filename}_p{page_number}_c{chunk_id}"
+            filepath = chunk.get("filepath", "")
+            
+            # 使用文件路径生成哈希，解决同名文件冲突问题
+            path_hash = hashlib.md5(filepath.encode('utf-8')).hexdigest()[:6]
+            unique_id = f"{filename}_{path_hash}_p{page_number}_c{chunk_id}"
+            # === 修改结束 ===
 
-            # 获取embedding向量
             embedding = self.get_embedding(content)
 
             documents.append(content)
@@ -103,7 +107,6 @@ class VectorStore:
             metadatas.append(metadata)
             ids.append(unique_id)
 
-        # 批量添加到ChromaDB
         if documents:
             self.collection.add(
                 documents=documents,
