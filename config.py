@@ -25,4 +25,7 @@ OVERLAP_ERROR = int(os.getenv("OVERLAP_ERROR", "20"))
 MAX_TOKENS = int(os.getenv("MAX_TOKENS", "4096"))
 
 # RAG配置
-TOP_K = int(os.getenv("TOP_K", "5"))
+TOP_K = int(os.getenv("TOP_K", "6"))
+
+# 多模态模型配置
+VL_MODEL_NAME = "qwen-vl-max"
