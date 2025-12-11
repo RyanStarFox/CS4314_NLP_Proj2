@@ -4,9 +4,11 @@ from typing import List, Dict, Optional
 import docx2txt
 from PyPDF2 import PdfReader
 from pptx import Presentation
-
-from config import DATA_DIR
-
+from pptx.enum.shapes import MSO_SHAPE_TYPE
+import base64
+import io
+from openai import OpenAI
+from config import DATA_DIR, OPENAI_API_KEY, OPENAI_API_BASE, ENABLE_IMAGE_CAPTIONING, IMAGE_CAPTION_MODEL
 
 class DocumentLoader:
     def __init__(
@@ -15,51 +17,107 @@ class DocumentLoader:
     ):
         self.data_dir = data_dir
         self.supported_formats = [".pdf", ".pptx", ".docx", ".txt", ".md"]
+        
+        # 初始化用于 Image Captioning 的客户端
+        if ENABLE_IMAGE_CAPTIONING:
+            self.client = OpenAI(api_key=OPENAI_API_KEY, base_url=OPENAI_API_BASE)
+
+    def _generate_image_caption(self, image_bytes: bytes, source_info: str = "") -> str:
+        """调用视觉大模型生成图片描述"""
+        if not ENABLE_IMAGE_CAPTIONING:
+            return ""
+            
+        try:
+            base64_image = base64.b64encode(image_bytes).decode('utf-8')
+            
+            response = self.client.chat.completions.create(
+                model=IMAGE_CAPTION_MODEL,
+                messages=[
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": "请详细描述这张图片的内容。如果是图表，请解释其数据趋势；如果是公式，请转写为LaTeX；如果是流程图，请说明步骤。请只输出描述内容，不要废话。"},
+                            {
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": f"data:image/jpeg;base64,{base64_image}"
+                                },
+                            },
+                        ],
+                    }
+                ],
+                max_tokens=300,
+            )
+            caption = response.choices[0].message.content
+            print(f" [图片理解] 已生成描述 ({source_info}): {caption[:30]}...")
+            return f"\n\n[图片描述 ({source_info})]: {caption}\n\n"
+        except Exception as e:
+            print(f" [图片理解] 生成失败: {e}")
+            return ""
 
     def load_pdf(self, file_path: str) -> List[Dict]:
-        """加载PDF文件，按页返回内容
-
-        TODO: 实现PDF文件加载
-        要求：
-        1. 使用PdfReader读取PDF文件
-        2. 遍历每一页，提取文本内容
-        3. 格式化为"--- 第 X 页 ---\n文本内容\n"
-        4. 返回pdf内容列表，每个元素包含 {"text": "..."}
-        """
+        """加载PDF文件，按页返回内容 (包含图片理解)"""
         pages = []
-        reader = PdfReader(file_path)
+        # 使用 PyMuPDF (fitz) 因为它提取图片更方便
+        import fitz 
+        doc = fitz.open(file_path)
         
-        for page_num, page in enumerate(reader.pages, start=1):
-            text = page.extract_text()
-            formatted_text = f"--- 第 {page_num} 页 ---\n{text}\n"
+        for page_num, page in enumerate(doc, start=1):
+            text = page.get_text()
+            
+            # 提取并处理图片
+            image_descriptions = ""
+            if ENABLE_IMAGE_CAPTIONING:
+                image_list = page.get_images(full=True)
+                for img_index, img in enumerate(image_list):
+                    xref = img[0]
+                    base_image = doc.extract_image(xref)
+                    image_bytes = base_image["image"]
+                    
+                    # 忽略过小的图标或装饰性图片 (例如小于 5KB)
+                    if len(image_bytes) < 5 * 1024:
+                        continue
+                        
+                    desc = self._generate_image_caption(image_bytes, source_info=f"第{page_num}页 图片{img_index+1}")
+                    image_descriptions += desc
+
+            formatted_text = f"--- 第 {page_num} 页 ---\n{text}\n{image_descriptions}\n"
             pages.append({"text": formatted_text})
         
         return pages
 
     def load_pptx(self, file_path: str) -> List[Dict]:
-        """加载PPT文件，按幻灯片返回内容
-
-        TODO: 实现PPT文件加载
-        要求：
-        1. 使用Presentation读取PPT文件
-        2. 遍历每一页，提取文本内容
-        3. 格式化为"--- 幻灯片 X ---\n文本内容\n"
-        4. 返回幻灯片内容列表，每个元素包含 {"text": "..."}
-        """
+        """加载PPT文件，按幻灯片返回内容 (包含图片理解)"""
         slides = []
         presentation = Presentation(file_path)
         
         for slide_num, slide in enumerate(presentation.slides, start=1):
             text_parts = []
+            image_descriptions = ""
+            
             for shape in slide.shapes:
+                # 提取文本
                 if hasattr(shape, "text_frame"):
                     for paragraph in shape.text_frame.paragraphs:
                         text = paragraph.text.strip()
                         if text:
                             text_parts.append(text)
-            
+                
+                # 提取图片
+                if ENABLE_IMAGE_CAPTIONING:
+                    if shape.shape_type == MSO_SHAPE_TYPE.PICTURE:
+                        try:
+                            image_bytes = shape.image.blob
+                             # 忽略过小的图片
+                            if len(image_bytes) < 5 * 1024:
+                                continue
+                            desc = self._generate_image_caption(image_bytes, source_info=f"幻灯片{slide_num}")
+                            image_descriptions += desc
+                        except Exception as e:
+                            print(f"PPT图片提取失败: {e}")
+
             slide_text = "\n".join(text_parts)
-            formatted_text = f"--- 幻灯片 {slide_num} ---\n{slide_text}\n"
+            formatted_text = f"--- 幻灯片 {slide_num} ---\n{slide_text}\n{image_descriptions}\n"
             slides.append({"text": formatted_text})
         
         return slides

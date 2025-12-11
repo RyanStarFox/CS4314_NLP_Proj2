@@ -15,4 +15,6 @@ pillow>=9.0.0
 pytesseract>=0.3.10
 python-dotenv>=1.0.0
 streamlit>=1.30.0
-
+fpdf
+rank_bm25
+jieba

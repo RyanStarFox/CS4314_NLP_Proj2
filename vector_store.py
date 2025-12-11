@@ -13,9 +13,12 @@ from config import (
     OPENAI_API_BASE,
     OPENAI_EMBEDDING_MODEL,
     TOP_K,
+    ENABLE_HYBRID_SEARCH,
+    HYBRID_SEARCH_ALPHA
 )
-
 import hashlib
+from rank_bm25 import BM25Okapi
+import jieba
 
 class VectorStore:
 
@@ -38,10 +41,60 @@ class VectorStore:
             path=db_path, settings=Settings(anonymized_telemetry=False)
         )
 
+        # 安全处理 Collection Name (支持中文等特殊字符)
+        # ChromaDB 只允许 3-63 字符，且只能包含字母数字、下划线、短横线
+        # 我们使用 MD5 哈希来映射任意名称到合法的 Collection Name
+        self.original_collection_name = collection_name
+        
+        # 即使是英文，使用哈希也是更安全的策略，避免长度超标或非法字符
+        # 但为了保留可读性 (如 Default_KB)，我们可以简单检查一下
+        import re
+        if re.match(r'^[a-zA-Z0-9_-]{3,63}$', collection_name):
+            self.safe_collection_name = collection_name
+        else:
+            # 对于非法名称 (如中文)，使用哈希值
+            hash_name = hashlib.md5(collection_name.encode('utf-8')).hexdigest()
+            self.safe_collection_name = f"kb_{hash_name}"
+            # 注意：这意味着如果用户删除了 vector_db 文件夹但没有删除 data 文件夹，
+            # 重新生成的哈希值应该是一样的，所以能找回。
+
         # 获取或创建collection
         self.collection = self.chroma_client.get_or_create_collection(
-            name=collection_name, metadata={"description": "课程材料向量数据库"}
+            name=self.safe_collection_name, metadata={"description": "课程材料向量数据库", "original_name": collection_name}
         )
+        
+        # 混合检索初始化
+        self.enable_hybrid = ENABLE_HYBRID_SEARCH
+        self.bm25 = None
+        self.doc_ids = []
+        self.doc_contents = []
+        self.doc_metadatas = []
+        
+        if self.enable_hybrid:
+            self._build_bm25_index()
+
+    def _build_bm25_index(self):
+        """构建BM25索引"""
+        try:
+            # 获取所有文档
+            # 注意：对于非常大的知识库，这可能会比较慢，但在本项目规模下是可以接受的
+            all_docs = self.collection.get(include=["documents", "metadatas"])
+            
+            if not all_docs["ids"]:
+                print("BM25: 知识库为空，跳过索引构建")
+                return
+                
+            self.doc_ids = all_docs["ids"]
+            self.doc_contents = all_docs["documents"]
+            self.doc_metadatas = all_docs["metadatas"]
+            
+            # 分词
+            tokenized_corpus = [list(jieba.cut(doc)) for doc in self.doc_contents]
+            self.bm25 = BM25Okapi(tokenized_corpus)
+            print(f"BM25 索引构建完成，共 {len(self.doc_contents)} 条文档")
+        except Exception as e:
+            print(f"BM25 索引构建失败: {e}")
+            self.enable_hybrid = False
 
     def get_embedding(self, text: str) -> List[float]:
         """获取文本的向量表示
@@ -116,31 +169,121 @@ class VectorStore:
             )
             print(f"\n成功添加 {len(documents)} 个文档块到向量数据库")
 
-    def search(self, query: str, top_k: int = TOP_K) -> List[Dict]:
-        """搜索相关文档
-
-        TODO: 实现向量相似度搜索
-        要求：
-        1. 首先获取查询文本的embedding向量（调用self.get_embedding）
-        2. 使用self.collection进行向量搜索, 得到top_k个结果
-        3. 格式化返回结果，每个结果包含：
-           - content: 文档内容
-           - metadata: 元数据（文件名、页码等）
-        4. 返回格式化的结果列表
-        """
+    def search(self, query: str, top_k: int = TOP_K) -> Dict:
+        """搜索相关文档 (支持混合检索)"""
+        if not self.enable_hybrid or not self.bm25:
+            # 仅使用向量检索
+            embedding = self.get_embedding(query)
+            results = self.collection.query(
+                query_embeddings=embedding,
+                n_results=top_k,
+                include=["documents", "metadatas", "distances"]
+            )
+            return results
+        
+        # 混合检索策略：Weighted Reciprocal Rank Fusion (Weighted RRF)
+        # 1. 向量检索召回
         embedding = self.get_embedding(query)
-        results = self.collection.query(
+        # 扩大召回数量以便重排序
+        fetch_k = min(top_k * 2, len(self.doc_ids)) if len(self.doc_ids) > 0 else top_k
+        if fetch_k == 0: return {"documents": [[]], "metadatas": [[]], "distances": [[]]}
+
+        vec_results = self.collection.query(
             query_embeddings=embedding,
-            n_results=top_k,
+            n_results=fetch_k,
             include=["documents", "metadatas", "distances"]
         )
-        return results
+        
+        # 2. BM25检索召回
+        tokenized_query = list(jieba.cut(query))
+        bm25_scores = self.bm25.get_scores(tokenized_query)
+        # 获取 top N 的索引
+        bm25_top_n_indices = sorted(range(len(bm25_scores)), key=lambda i: bm25_scores[i], reverse=True)[:fetch_k]
+        
+        # 3. 融合排名
+        # 使用 RRF 算法: score = alpha * (1 / (k + rank_vec)) + (1 - alpha) * (1 / (k + rank_bm25))
+        # k 通常取 60
+        rrf_k = 60
+        alpha = HYBRID_SEARCH_ALPHA
+        
+        # 构建文档 ID 到排名的映射
+        vec_rank_map = {} # doc_id -> rank (0-based)
+        if vec_results['ids'] and vec_results['ids'][0]:
+            for rank, doc_id in enumerate(vec_results['ids'][0]):
+                vec_rank_map[doc_id] = rank
+
+        bm25_rank_map = {} # doc_id -> rank (0-based)
+        for rank, idx in enumerate(bm25_top_n_indices):
+            doc_id = self.doc_ids[idx]
+            bm25_rank_map[doc_id] = rank
+            
+        # 收集所有涉及的文档 ID
+        all_candidate_ids = set(vec_rank_map.keys()) | set(bm25_rank_map.keys())
+        
+        final_scores = []
+        for doc_id in all_candidate_ids:
+            # 获取向量排名 (如果没有出现，假设排在最后)
+            rank_vec = vec_rank_map.get(doc_id, fetch_k + rrf_k)
+            # 获取BM25排名
+            rank_bm25 = bm25_rank_map.get(doc_id, fetch_k + rrf_k)
+            
+            score = alpha * (1 / (rrf_k + rank_vec + 1)) + (1 - alpha) * (1 / (rrf_k + rank_bm25 + 1))
+            final_scores.append((doc_id, score))
+            
+        # 排序并取 Top K
+        final_scores.sort(key=lambda x: x[1], reverse=True)
+        top_results = final_scores[:top_k]
+        
+        # 4. 格式化输出 (模拟 Chroma 格式)
+        res_ids = []
+        res_docs = []
+        res_metas = []
+        res_scores = []
+        
+        # 为了快速查找 content 和 metadata，建立索引映射
+        id_to_idx = {did: i for i, did in enumerate(self.doc_ids)}
+        
+        for doc_id, score in top_results:
+            if doc_id in id_to_idx:
+                idx = id_to_idx[doc_id]
+                res_ids.append(doc_id)
+                res_docs.append(self.doc_contents[idx])
+                res_metas.append(self.doc_metadatas[idx])
+                res_scores.append(score) # 注意这里返回的是混合分数
+                
+        return {
+            "ids": [res_ids],
+            "documents": [res_docs],
+            "metadatas": [res_metas],
+            "distances": [res_scores] # 兼容 agent 逻辑，虽然名字叫 distance 但这里是 score
+        }
+
+    def delete_collection(self, collection_name: str) -> None:
+        """删除指定的collection"""
+        # 同样需要进行哈希转换
+        import re
+        if re.match(r'^[a-zA-Z0-9_-]{3,63}$', collection_name):
+            safe_name = collection_name
+        else:
+            safe_name = f"kb_{hashlib.md5(collection_name.encode('utf-8')).hexdigest()}"
+
+        try:
+            self.chroma_client.delete_collection(name=safe_name)
+            print(f"Collection {collection_name} (safe: {safe_name}) 已删除")
+        except Exception as e:
+            print(f"删除 Collection {collection_name} 失败 (可能不存在): {e}")
 
     def clear_collection(self) -> None:
         """清空collection"""
-        self.chroma_client.delete_collection(name=self.collection_name)
+        # 使用 self.safe_collection_name
+        try:
+            self.chroma_client.delete_collection(name=self.safe_collection_name)
+        except:
+            pass # Ignore if doesn't exist
+            
         self.collection = self.chroma_client.create_collection(
-            name=self.collection_name, metadata={"description": "课程向量数据库"}
+            name=self.safe_collection_name, 
+            metadata={"description": "课程向量数据库", "original_name": self.original_collection_name}
         )
         print("向量数据库已清空")
 
