@@ -1,7 +1,11 @@
 import streamlit as st
 import time
 import json
+import threading
+import base64
 from question_db import QuestionDB
+from openai import OpenAI
+from config import OPENAI_API_KEY, OPENAI_API_BASE, VL_MODEL_NAME, MODEL_NAME
 
 st.set_page_config(page_title="错题整理", page_icon="logo.webp", layout="wide")
 
@@ -68,6 +72,11 @@ with col2:
 # 获取当前错题本的错题
 wrong_questions = question_db.get_wrong_questions(mistake_book=selected_book)
 
+# 检查是否有处理中的题目
+has_processing = False
+if wrong_questions:
+    has_processing = any(item.get("status", "completed") == "processing" for item in wrong_questions)
+
 # Session State for Re-quiz
 if "mistake_index" not in st.session_state:
     st.session_state.mistake_index = 0
@@ -78,6 +87,15 @@ if "selected_questions" not in st.session_state:
 
 # --- Mode: List View ---
 if st.session_state.mistake_mode == "list":
+    # 如果有处理中的题目，显示提示和刷新按钮
+    if has_processing:
+        col_info, col_refresh = st.columns([3, 1])
+        with col_info:
+            st.info("⏳ 检测到有题目正在后台处理中，请稍候...")
+        with col_refresh:
+            if st.button("🔄 刷新状态", key="refresh_processing"):
+                st.rerun()
+    
     st.markdown(f"### 共 {len(wrong_questions)} 道错题")
     
     # 如果错题本为空，显示提示信息
@@ -139,133 +157,164 @@ if st.session_state.mistake_mode == "list":
                 if not valid_input:
                     st.error("请至少输入题目文本或上传图片")
                 else:
-                    with st.spinner("正在处理..."):
-                        import base64
-                        from openai import OpenAI
-                        from config import OPENAI_API_KEY, OPENAI_API_BASE, VL_MODEL_NAME
-                        
-                        client = OpenAI(api_key=OPENAI_API_KEY, base_url=OPENAI_API_BASE)
-                        
-                        final_question = q_content
-                        final_options = q_options
-                        final_correct = q_correct
-                        final_explanation = q_explanation
-                        
-                        # 1. Image Processing (Extraction)
-                        if uploaded_q_image and (not q_content or not q_options):
-                            try:
-                                img_b64 = base64.b64encode(uploaded_q_image.getvalue()).decode('utf-8')
-                                extract_prompt = """请识别这张图片中的题目。
-                                请以严格的 JSON 格式输出，不要包含 Markdown 代码块。
-                                格式如下：
-                                {
-                                    "question": "题目文本",
-                                    "options": ["选项A内容", "选项B内容", ...],
-                                    "correct_answer": "如果有标准答案请填在这里，否则留空",
-                                    "explanation": "如果有解析请填在这里，否则留空"
-                                }
-                                """
-                                response = client.chat.completions.create(
-                                    model=VL_MODEL_NAME,
-                                    messages=[
-                                        {
-                                            "role": "user", 
-                                            "content": [
-                                                {"type": "text", "text": extract_prompt},
-                                                {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img_b64}"}}
-                                            ]
-                                        }
-                                    ],
-                                    response_format={"type": "json_object"}
-                                )
-                                extracted = json.loads(response.choices[0].message.content)
-                                
-                                if not final_question: final_question = extracted.get("question", "")
-                                if not final_options: final_options = "\n".join(extracted.get("options", []))
-                                if not final_correct: final_correct = extracted.get("correct_answer", "")
-                                if not final_explanation: final_explanation = extracted.get("explanation", "")
-                                
-                            except Exception as e:
-                                st.warning(f"图片识别失败: {e}")
-                        
-                        # 2. Answer & Explanation Generation (if missing)
-                        if not final_correct or not final_explanation:
-                            try:
-                                solve_prompt = f"""
-                                题目：{final_question}
-                                选项：{final_options}
-                                
-                                请做这道题。
-                                1. 给出正确选项（例如 "A" 或 "选项内容"）。
-                                2. 给出详细解析。
-                                
-                                请以 JSON 格式输出：
-                                {{
-                                    "correct_answer": "...",
-                                    "explanation": "..."
-                                }}
-                                """
-                                # Use standard model for solving if text is available
-                                from config import MODEL_NAME
-                                solve_resp = client.chat.completions.create(
-                                    model=MODEL_NAME,
-                                    messages=[{"role": "user", "content": solve_prompt}],
-                                    response_format={"type": "json_object"}
-                                )
-                                solution = json.loads(solve_resp.choices[0].message.content)
-                                
-                                if not final_correct: final_correct = solution.get("correct_answer", "")
-                                # User requested "Always generate explanation" (LLM自己生成解析)
-                                # So we prefer LLM explanation unless user provided one?
-                                # User said: "始终自己生成解析" -> Assuming if user left it blank, generate. 
-                                # But actually "始终" implies overwrite? Let's stick to "if blank" for better UX, or append.
-                                # Let's overwrite if blank.
-                                if not final_explanation: final_explanation = solution.get("explanation", "")
-                                
-                            except Exception as e:
-                                print(f"解析生成失败: {e}")
-
-                        # Construct Final Data
-                        options_list = [opt.strip() for opt in final_options.split('\n') if opt.strip()]
-                        if not options_list: options_list = ["(未识别到选项)"]
-                        
-                        question_data = {
-                            "question": final_question if final_question else "（未识别题目）",
-                            "options": options_list,
-                            "correct_answer": final_correct if final_correct else "（未知）",
-                            "explanation": final_explanation if final_explanation else "暂无解析"
-                        }
-                        
-                        # Generate Summary for Manual Question
-                        summary = None
+                    # 先保存"处理中"状态的记录
+                    initial_question = q_content if q_content else "（正在识别中...）"
+                    initial_options = q_options.split('\n') if q_options else ["（正在识别中...）"]
+                    
+                    initial_question_data = {
+                        "question": initial_question,
+                        "options": initial_options,
+                        "correct_answer": q_correct if q_correct else "（处理中...）",
+                        "explanation": q_explanation if q_explanation else "（处理中...）"
+                    }
+                    
+                    # 保存图片数据到 session state（用于后台处理）
+                    image_data = None
+                    if uploaded_q_image:
+                        image_data = base64.b64encode(uploaded_q_image.getvalue()).decode('utf-8')
+                    
+                    # 添加"处理中"状态的记录
+                    record_id = question_db.add_result(
+                        kb_name="Manual_Upload", 
+                        question_data=initial_question_data,
+                        user_answer="（手动添加）",
+                        is_correct=False,
+                        summary="处理中...",
+                        mistake_book=target_book,
+                        status="processing"
+                    )
+                    
+                    # 启动后台线程处理 LLM 识别
+                    def process_question_async(record_id, target_book, q_content, q_options, q_correct, q_explanation, image_data):
+                        """后台异步处理题目识别"""
                         try:
-                            # Use existing logic to generate summary
-                            sum_prompt = f"请用不超过20个字总结以下题目的核心考点或问题大意：\n{final_question}"
+                            client = OpenAI(api_key=OPENAI_API_KEY, base_url=OPENAI_API_BASE)
                             
-                            # Use standard model for summarization
-                            from config import MODEL_NAME
-                            sum_resp = client.chat.completions.create(
-                                model=MODEL_NAME,
-                                messages=[{"role": "user", "content": sum_prompt}],
-                                max_tokens=50,
-                                temperature=0.3
-                            )
-                            summary = sum_resp.choices[0].message.content.strip()
-                        except Exception as e:
-                            print(f"Summary generation failed: {e}")
-                            summary = final_question[:20] + "..." if final_question else "图片题目"
+                            final_question = q_content
+                            final_options = q_options
+                            final_correct = q_correct
+                            final_explanation = q_explanation
+                            
+                            # 1. Image Processing (Extraction)
+                            if image_data and (not q_content or not q_options):
+                                try:
+                                    extract_prompt = """请识别这张图片中的题目。
+                                    请以严格的 JSON 格式输出，不要包含 Markdown 代码块。
+                                    格式如下：
+                                    {
+                                        "question": "题目文本",
+                                        "options": ["选项A内容", "选项B内容", ...],
+                                        "correct_answer": "如果有标准答案请填在这里，否则留空",
+                                        "explanation": "如果有解析请填在这里，否则留空"
+                                    }
+                                    """
+                                    response = client.chat.completions.create(
+                                        model=VL_MODEL_NAME,
+                                        messages=[
+                                            {
+                                                "role": "user", 
+                                                "content": [
+                                                    {"type": "text", "text": extract_prompt},
+                                                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_data}"}}
+                                                ]
+                                            }
+                                        ],
+                                        response_format={"type": "json_object"}
+                                    )
+                                    extracted = json.loads(response.choices[0].message.content)
+                                    
+                                    if not final_question: final_question = extracted.get("question", "")
+                                    if not final_options: final_options = "\n".join(extracted.get("options", []))
+                                    if not final_correct: final_correct = extracted.get("correct_answer", "")
+                                    if not final_explanation: final_explanation = extracted.get("explanation", "")
+                                    
+                                except Exception as e:
+                                    print(f"图片识别失败: {e}")
+                            
+                            # 2. Answer & Explanation Generation (if missing)
+                            if not final_correct or not final_explanation:
+                                try:
+                                    solve_prompt = f"""
+                                    题目：{final_question}
+                                    选项：{final_options}
+                                    
+                                    请做这道题。
+                                    1. 给出正确选项（例如 "A" 或 "选项内容"）。
+                                    2. 给出详细解析。
+                                    
+                                    请以 JSON 格式输出：
+                                    {{
+                                        "correct_answer": "...",
+                                        "explanation": "..."
+                                    }}
+                                    """
+                                    solve_resp = client.chat.completions.create(
+                                        model=MODEL_NAME,
+                                        messages=[{"role": "user", "content": solve_prompt}],
+                                        response_format={"type": "json_object"}
+                                    )
+                                    solution = json.loads(solve_resp.choices[0].message.content)
+                                    
+                                    if not final_correct: final_correct = solution.get("correct_answer", "")
+                                    if not final_explanation: final_explanation = solution.get("explanation", "")
+                                    
+                                except Exception as e:
+                                    print(f"解析生成失败: {e}")
 
-                        question_db.add_result(
-                            kb_name="Manual_Upload", 
-                            question_data=question_data,
-                            user_answer="（手动添加）",
-                            is_correct=False,
-                            summary=summary,
-                            mistake_book=target_book  # 使用用户选择的错题本
-                        )
-                        st.success("添加成功！")
-                        time.sleep(1)
-                        st.rerun()
+                            # Construct Final Data
+                            options_list = [opt.strip() for opt in final_options.split('\n') if opt.strip()]
+                            if not options_list: options_list = ["(未识别到选项)"]
+                            
+                            question_data = {
+                                "question": final_question if final_question else "（未识别题目）",
+                                "options": options_list,
+                                "correct_answer": final_correct if final_correct else "（未知）",
+                                "explanation": final_explanation if final_explanation else "暂无解析"
+                            }
+                            
+                            # Generate Summary for Manual Question
+                            summary = None
+                            try:
+                                sum_prompt = f"请用不超过20个字总结以下题目的核心考点或问题大意：\n{final_question}"
+                                sum_resp = client.chat.completions.create(
+                                    model=MODEL_NAME,
+                                    messages=[{"role": "user", "content": sum_prompt}],
+                                    max_tokens=50,
+                                    temperature=0.3
+                                )
+                                summary = sum_resp.choices[0].message.content.strip()
+                            except Exception as e:
+                                print(f"Summary generation failed: {e}")
+                                summary = final_question[:20] + "..." if final_question else "图片题目"
+
+                            # 更新记录状态
+                            question_db.update_question_status(
+                                record_id=record_id,
+                                question_data=question_data,
+                                summary=summary,
+                                status="completed",
+                                mistake_book=target_book
+                            )
+                        except Exception as e:
+                            print(f"后台处理失败: {e}")
+                            # 更新为失败状态
+                            question_db.update_question_status(
+                                record_id=record_id,
+                                status="failed",
+                                mistake_book=target_book
+                            )
+                    
+                    # 启动后台线程
+                    thread = threading.Thread(
+                        target=process_question_async,
+                        args=(record_id, target_book, q_content, q_options, q_correct, q_explanation, image_data),
+                        daemon=True
+                    )
+                    thread.start()
+                    
+                    st.success("✅ 题目已添加，正在后台处理中...")
+                    time.sleep(0.5)
+                    st.rerun()
 
     # 错题列表显示 - 只有当有错题时才显示
     if wrong_questions:
@@ -315,12 +364,23 @@ if st.session_state.mistake_mode == "list":
             q = item["question"]
             question_text = q.get('question')
             
+            # 检查处理状态
+            status = item.get("status", "completed")  # 默认为已完成（兼容旧数据）
+            is_processing = status == "processing"
+            is_failed = status == "failed"
+            
             # Summary logic: Use LLM summary if available, else truncate
             summary = item.get("summary")
             if not summary:
                 summary = question_text[:20] + "..." if len(question_text) > 20 else question_text
             
-            # 多选复选框
+            # 如果正在处理中，在摘要前添加标识
+            if is_processing:
+                summary = f"⏳ 处理中... {summary}"
+            elif is_failed:
+                summary = f"❌ 处理失败 {summary}"
+            
+            # 多选复选框（处理中的题目不允许选择）
             col_check, col_expander = st.columns([0.05, 0.95])
             with col_check:
                 checkbox_key = f"checkbox_{item['id']}"
@@ -332,12 +392,13 @@ if st.session_state.mistake_mode == "list":
                     "",
                     value=st.session_state[checkbox_key],
                     key=checkbox_key,
-                    label_visibility="collapsed"
+                    label_visibility="collapsed",
+                    disabled=is_processing  # 处理中的题目不允许选择
                 )
                 # 根据checkbox状态同步更新选中集合
                 # 检查状态是否改变，如果改变则更新并刷新页面
                 was_selected = item["id"] in st.session_state.selected_questions
-                if is_selected != was_selected:
+                if is_selected != was_selected and not is_processing:
                     if is_selected:
                         st.session_state.selected_questions.add(item["id"])
                     else:
@@ -345,37 +406,63 @@ if st.session_state.mistake_mode == "list":
                     st.rerun()
             
             with col_expander:
-                with st.expander(f"❌ 错题 {i+1}: {summary}", expanded=expand_all):
-                    st.markdown(f"**题目：** {question_text}")
-                    st.markdown("**选项：**")
-                    options = q.get("options", [])
-                    for opt in options:
-                        st.text(f"- {opt}")
-                    
-                    st.markdown(f"**你的错误答案：** ❌ {item.get('user_answer')}")
-                    
-                    # Editable Correct Answer
-                    current_correct = q.get('correct_answer')
-                    col_ans, col_edit = st.columns([3, 1])
-                    with col_ans:
-                        st.markdown(f"**正确答案：** ✅ {current_correct}")
-                    with col_edit:
-                        with st.popover("✏️ 修改答案"):
-                            new_correct = st.selectbox("修正正确答案为:", options, index=options.index(current_correct) if current_correct in options else 0, key=f"edit_ans_{item['id']}")
-                            if st.button("确认修改", key=f"confirm_edit_{item['id']}"):
-                                question_db.update_correct_answer(item['id'], new_correct, mistake_book=selected_book)
-                                st.rerun()
+                expander_title = f"❌ 错题 {i+1}: {summary}"
+                if is_processing:
+                    expander_title = f"⏳ 错题 {i+1}: {summary}"
+                elif is_failed:
+                    expander_title = f"❌ 错题 {i+1}: {summary}"
+                
+                with st.expander(expander_title, expanded=expand_all):
+                    if is_processing:
+                        st.info("🔄 正在后台处理中，请稍候...")
+                        st.markdown(f"**题目：** {question_text}")
+                        st.markdown("**选项：**")
+                        options = q.get("options", [])
+                        for opt in options:
+                            st.text(f"- {opt}")
+                        st.warning("💡 题目内容正在由 AI 识别和处理中，完成后会自动更新。")
+                    elif is_failed:
+                        st.error("❌ 处理失败，请重新上传或手动编辑。")
+                        st.markdown(f"**题目：** {question_text}")
+                        st.markdown("**选项：**")
+                        options = q.get("options", [])
+                        for opt in options:
+                            st.text(f"- {opt}")
+                    else:
+                        # 正常显示
+                        st.markdown(f"**题目：** {question_text}")
+                        st.markdown("**选项：**")
+                        options = q.get("options", [])
+                        for opt in options:
+                            st.text(f"- {opt}")
+                        
+                        st.markdown(f"**你的错误答案：** ❌ {item.get('user_answer')}")
+                        
+                        # Editable Correct Answer
+                        current_correct = q.get('correct_answer')
+                        col_ans, col_edit = st.columns([3, 1])
+                        with col_ans:
+                            st.markdown(f"**正确答案：** ✅ {current_correct}")
+                        with col_edit:
+                            with st.popover("✏️ 修改答案"):
+                                new_correct = st.selectbox("修正正确答案为:", options, index=options.index(current_correct) if current_correct in options else 0, key=f"edit_ans_{item['id']}")
+                                if st.button("确认修改", key=f"confirm_edit_{item['id']}"):
+                                    question_db.update_correct_answer(item['id'], new_correct, mistake_book=selected_book)
+                                    st.rerun()
 
-                    st.info(f"💡 **解析：** {q.get('explanation')}")
-                    
-                    if st.button("🗑️ 我已掌握，移出错题本", key=f"del_{item['id']}"):
-                        question_db.remove_wrong_question(item['id'], mistake_book=selected_book)
-                        st.rerun()
+                        st.info(f"💡 **解析：** {q.get('explanation')}")
+                        
+                        if st.button("🗑️ 我已掌握，移出错题本", key=f"del_{item['id']}"):
+                            question_db.remove_wrong_question(item['id'], mistake_book=selected_book)
+                            st.rerun()
 
 # --- Mode: Quiz View ---
 elif st.session_state.mistake_mode == "quiz":
     # Reload in case some were deleted
     wrong_questions = question_db.get_wrong_questions(mistake_book=st.session_state.selected_mistake_book)
+    # 过滤掉处理中的题目（复习模式不显示处理中的题目）
+    wrong_questions = [q for q in wrong_questions if q.get("status", "completed") != "processing"]
+    
     if not wrong_questions:
         st.session_state.mistake_mode = "list"
         st.rerun()
