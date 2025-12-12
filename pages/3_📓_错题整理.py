@@ -16,38 +16,101 @@ st.markdown("""
 
 st.title("📓 错题整理")
 
-question_db = QuestionDB()
-wrong_questions = question_db.get_wrong_questions()
+question_db = QuestionDB() # 重新添加初始化
+st.markdown("### 📚 错题本选择与管理") # 新增：共同标题
+col1, col2 = st.columns([3, 1])
+with col1:
+    # 获取所有错题本
+    mistake_books = question_db.list_mistake_books()
+    if "selected_mistake_book" not in st.session_state:
+        st.session_state.selected_mistake_book = "默认错题本"
+    
+    selected_book = st.selectbox(
+        "📚 选择错题本", 
+        mistake_books,
+        index=mistake_books.index(st.session_state.selected_mistake_book) if st.session_state.selected_mistake_book in mistake_books else 0,
+        key="mistake_book_selector",
+        label_visibility="collapsed" # 新增：隐藏标签
+    )
+    
+    # 如果切换了错题本，清空选中状态
+    if st.session_state.selected_mistake_book != selected_book:
+        st.session_state.selected_questions = set()
+    st.session_state.selected_mistake_book = selected_book
 
-if not wrong_questions:
-    st.info("🎉 太棒了！目前错题本是空的。快去【做题练习】吧！")
-    if st.button("前往做题练习"):
-        st.switch_page("pages/2_📝_做题练习.py")
-    st.stop()
+with col2:
+    with st.popover("⚙️ 管理错题本"):
+        st.subheader("创建新错题本")
+        new_book_name = st.text_input("错题本名称", key="new_book_input")
+        if st.button("➕ 创建", key="create_book_btn"):
+            if new_book_name:
+                if question_db.create_mistake_book(new_book_name):
+                    st.success(f"创建成功：{new_book_name}")
+                    time.sleep(0.5)
+                    st.rerun()
+                else:
+                    st.error("该错题本已存在")
+            else:
+                st.warning("请输入错题本名称")
+        
+        st.markdown("---")
+        st.subheader("删除错题本")
+        if selected_book != "默认错题本":
+            if st.button(f"🗑️ 删除 {selected_book}", type="secondary", key="delete_book_btn"):
+                if question_db.delete_mistake_book(selected_book):
+                    st.session_state.selected_mistake_book = "默认错题本"
+                    st.success("删除成功")
+                    time.sleep(0.5)
+                    st.rerun()
+        else:
+            st.info("默认错题本不能删除")
+
+# 获取当前错题本的错题
+wrong_questions = question_db.get_wrong_questions(mistake_book=selected_book)
 
 # Session State for Re-quiz
 if "mistake_index" not in st.session_state:
     st.session_state.mistake_index = 0
 if "mistake_mode" not in st.session_state:
     st.session_state.mistake_mode = "list" # list, quiz
+if "selected_questions" not in st.session_state:
+    st.session_state.selected_questions = set()  # 存储选中的错题ID
 
 # --- Mode: List View ---
 if st.session_state.mistake_mode == "list":
     st.markdown(f"### 共 {len(wrong_questions)} 道错题")
     
-    col_act1, col_act2 = st.columns([1, 1])
-    with col_act1:
-        if st.button("📝 开始复习模式 (逐个重做)", type="primary", use_container_width=True):
-            st.session_state.mistake_mode = "quiz"
-            st.session_state.mistake_index = 0
-            st.rerun()
-    with col_act2:
-        expand_all = st.checkbox("📖 展开所有题目", value=False)
+    # 如果错题本为空，显示提示信息
+    if not wrong_questions:
+        st.info(f"🎉 太棒了！错题本「{selected_book}」是空的。可以手动添加错题或去【做题练习】！")
+        if st.button("前往做题练习", type="primary"):
+            st.switch_page("pages/2_📝_做题练习.py")
+        st.markdown("---")
+        expand_all = False  # 空错题本时不需要展开选项
+    else:
+        # 有错题时显示复习按钮
+        col_act1, col_act2 = st.columns([1, 1])
+        with col_act1:
+            if st.button("📝 开始复习模式 (逐个重做)", type="primary", use_container_width=True):
+                st.session_state.mistake_mode = "quiz"
+                st.session_state.mistake_index = 0
+                st.rerun()
+        with col_act2:
+            expand_all = st.checkbox("📖 展开所有题目", value=False)
 
-    # Manual Question Upload
+    # Manual Question Upload - 始终显示，无论错题本是否为空
     with st.expander("➕ 手动添加错题", expanded=False):
         with st.form("manual_add_mistake"):
             st.info("💡 提示：上传题目图片后，系统将尝试自动识别题目内容和选项。")
+            
+            # 选择添加到哪个错题本
+            target_book = st.selectbox(
+                "📚 添加到错题本", 
+                question_db.list_mistake_books(),
+                index=question_db.list_mistake_books().index(selected_book) if selected_book in question_db.list_mistake_books() else 0,
+                help="选择将错题添加到哪个错题本"
+            )
+            
             uploaded_q_image = st.file_uploader("上传题目图片（可选）", type=["jpg", "png", "jpeg"])
             
             # Use columns for text inputs to save space if needed, or just standard
@@ -197,54 +260,122 @@ if st.session_state.mistake_mode == "list":
                             question_data=question_data,
                             user_answer="（手动添加）",
                             is_correct=False,
-                            summary=summary
+                            summary=summary,
+                            mistake_book=target_book  # 使用用户选择的错题本
                         )
                         st.success("添加成功！")
                         time.sleep(1)
                         st.rerun()
 
-    st.markdown("---")
-
-    for i, item in enumerate(wrong_questions):
-        q = item["question"]
-        question_text = q.get('question')
+    # 错题列表显示 - 只有当有错题时才显示
+    if wrong_questions:
+        st.markdown("---")
         
-        # Summary logic: Use LLM summary if available, else truncate
-        summary = item.get("summary")
-        if not summary:
-            summary = question_text[:20] + "..." if len(question_text) > 20 else question_text
-        
-        with st.expander(f"❌ 错题 {i+1}: {summary}", expanded=expand_all):
-            st.markdown(f"**题目：** {question_text}")
-            st.markdown("**选项：**")
-            options = q.get("options", [])
-            for opt in options:
-                st.text(f"- {opt}")
-            
-            st.markdown(f"**你的错误答案：** ❌ {item.get('user_answer')}")
-            
-            # Editable Correct Answer
-            current_correct = q.get('correct_answer')
-            col_ans, col_edit = st.columns([3, 1])
-            with col_ans:
-                st.markdown(f"**正确答案：** ✅ {current_correct}")
-            with col_edit:
-                with st.popover("✏️ 修改答案"):
-                    new_correct = st.selectbox("修正正确答案为:", options, index=options.index(current_correct) if current_correct in options else 0, key=f"edit_ans_{item['id']}")
-                    if st.button("确认修改", key=f"confirm_edit_{item['id']}"):
-                        question_db.update_correct_answer(item['id'], new_correct)
-                        st.rerun()
-
-            st.info(f"💡 **解析：** {q.get('explanation')}")
-            
-            if st.button("🗑️ 我已掌握，移出错题本", key=f"del_{item['id']}"):
-                question_db.remove_wrong_question(item['id'])
+        # 批量操作区域
+        selected_count = len(st.session_state.selected_questions)
+        col_batch1, col_batch2, col_batch3, col_batch4 = st.columns([1, 1, 1, 2])
+        with col_batch1:
+            if st.button("✅ 全选", key="select_all", use_container_width=True):
+                # 更新选中集合
+                all_ids = {item["id"] for item in wrong_questions}
+                st.session_state.selected_questions = all_ids
+                # 同步更新所有checkbox的session_state
+                for item in wrong_questions:
+                    checkbox_key = f"checkbox_{item['id']}"
+                    st.session_state[checkbox_key] = True
                 st.rerun()
+        with col_batch2:
+            if st.button("❌ 取消全选", key="deselect_all", use_container_width=True):
+                # 更新选中集合
+                st.session_state.selected_questions = set()
+                # 同步更新所有checkbox的session_state
+                for item in wrong_questions:
+                    checkbox_key = f"checkbox_{item['id']}"
+                    st.session_state[checkbox_key] = False
+                st.rerun()
+        with col_batch3:
+            if selected_count > 0:
+                if st.button(f"🗑️ 批量删除 ({selected_count})", key="batch_delete", type="primary", use_container_width=True):
+                    # 批量删除选中的错题
+                    for question_id in st.session_state.selected_questions:
+                        question_db.remove_wrong_question(question_id, mistake_book=selected_book)
+                    st.session_state.selected_questions = set()
+                    st.success(f"已删除 {selected_count} 道错题")
+                    time.sleep(0.5)
+                    st.rerun()
+            else:
+                st.button("🗑️ 批量删除", key="batch_delete_disabled", disabled=True, use_container_width=True)
+        with col_batch4:
+            if selected_count > 0:
+                st.info(f"已选择 {selected_count} 道错题")
+
+        st.markdown("---")
+
+        for i, item in enumerate(wrong_questions):
+            q = item["question"]
+            question_text = q.get('question')
+            
+            # Summary logic: Use LLM summary if available, else truncate
+            summary = item.get("summary")
+            if not summary:
+                summary = question_text[:20] + "..." if len(question_text) > 20 else question_text
+            
+            # 多选复选框
+            col_check, col_expander = st.columns([0.05, 0.95])
+            with col_check:
+                checkbox_key = f"checkbox_{item['id']}"
+                # 初始化checkbox状态（如果不存在）
+                if checkbox_key not in st.session_state:
+                    st.session_state[checkbox_key] = item["id"] in st.session_state.selected_questions
+                
+                is_selected = st.checkbox(
+                    "",
+                    value=st.session_state[checkbox_key],
+                    key=checkbox_key,
+                    label_visibility="collapsed"
+                )
+                # 根据checkbox状态同步更新选中集合
+                # 检查状态是否改变，如果改变则更新并刷新页面
+                was_selected = item["id"] in st.session_state.selected_questions
+                if is_selected != was_selected:
+                    if is_selected:
+                        st.session_state.selected_questions.add(item["id"])
+                    else:
+                        st.session_state.selected_questions.discard(item["id"])
+                    st.rerun()
+            
+            with col_expander:
+                with st.expander(f"❌ 错题 {i+1}: {summary}", expanded=expand_all):
+                    st.markdown(f"**题目：** {question_text}")
+                    st.markdown("**选项：**")
+                    options = q.get("options", [])
+                    for opt in options:
+                        st.text(f"- {opt}")
+                    
+                    st.markdown(f"**你的错误答案：** ❌ {item.get('user_answer')}")
+                    
+                    # Editable Correct Answer
+                    current_correct = q.get('correct_answer')
+                    col_ans, col_edit = st.columns([3, 1])
+                    with col_ans:
+                        st.markdown(f"**正确答案：** ✅ {current_correct}")
+                    with col_edit:
+                        with st.popover("✏️ 修改答案"):
+                            new_correct = st.selectbox("修正正确答案为:", options, index=options.index(current_correct) if current_correct in options else 0, key=f"edit_ans_{item['id']}")
+                            if st.button("确认修改", key=f"confirm_edit_{item['id']}"):
+                                question_db.update_correct_answer(item['id'], new_correct, mistake_book=selected_book)
+                                st.rerun()
+
+                    st.info(f"💡 **解析：** {q.get('explanation')}")
+                    
+                    if st.button("🗑️ 我已掌握，移出错题本", key=f"del_{item['id']}"):
+                        question_db.remove_wrong_question(item['id'], mistake_book=selected_book)
+                        st.rerun()
 
 # --- Mode: Quiz View ---
 elif st.session_state.mistake_mode == "quiz":
     # Reload in case some were deleted
-    wrong_questions = question_db.get_wrong_questions()
+    wrong_questions = question_db.get_wrong_questions(mistake_book=st.session_state.selected_mistake_book)
     if not wrong_questions:
         st.session_state.mistake_mode = "list"
         st.rerun()
@@ -290,7 +421,7 @@ elif st.session_state.mistake_mode == "quiz":
         col1, col2 = st.columns(2)
         with col1:
             if st.button("🗑️ 标记为已掌握 (移出)", key=f"mq_del_{item['id']}", type="primary"):
-                question_db.remove_wrong_question(item['id'])
+                question_db.remove_wrong_question(item['id'], mistake_book=st.session_state.selected_mistake_book)
                 # Adjust index if needed? If we delete, the next item slides into this index.
                 # So we don't increment index, but we need to reset the state for the new item at this index?
                 # Actually, easier to just increment index for flow, or reload.

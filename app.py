@@ -112,7 +112,7 @@ col1, col2, col3 = st.columns(3)
 
 with col1:
     st.markdown("""
-    <a href="1_🧠_智能助教" class="card-link" target="_self">
+    <a href="智能助教" class="card-link" target="_self">
         <div class="nav-card">
             <div class="card-icon">🧠</div>
             <h3>智能助教</h3>

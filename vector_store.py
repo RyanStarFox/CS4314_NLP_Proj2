@@ -168,6 +168,11 @@ class VectorStore:
                 ids=ids
             )
             print(f"\n成功添加 {len(documents)} 个文档块到向量数据库")
+            
+            # 重建 BM25 索引（如果启用了混合检索）
+            if self.enable_hybrid:
+                print("正在更新 BM25 索引...")
+                self._build_bm25_index()
 
     def search(self, query: str, top_k: int = TOP_K) -> Dict:
         """搜索相关文档 (支持混合检索)"""
@@ -290,3 +295,39 @@ class VectorStore:
     def get_collection_count(self) -> int:
         """获取collection中的文档数量"""
         return self.collection.count()
+    
+    def delete_documents_by_file(self, filename: str) -> int:
+        """删除指定文件的所有文档块
+        
+        Args:
+            filename: 文件名（不含路径）
+            
+        Returns:
+            删除的文档数量
+        """
+        try:
+            # 查询该文件的所有文档
+            all_docs = self.collection.get(
+                where={"filename": filename},
+                include=["metadatas"]
+            )
+            
+            if not all_docs["ids"]:
+                print(f"未找到文件 {filename} 的文档")
+                return 0
+            
+            # 删除这些文档
+            doc_ids = all_docs["ids"]
+            self.collection.delete(ids=doc_ids)
+            
+            deleted_count = len(doc_ids)
+            print(f"已删除文件 {filename} 的 {deleted_count} 个文档块")
+            
+            # 重建 BM25 索引
+            if self.enable_hybrid:
+                self._build_bm25_index()
+            
+            return deleted_count
+        except Exception as e:
+            print(f"删除文件文档时出错: {e}")
+            return 0

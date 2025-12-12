@@ -10,6 +10,7 @@ from config import (
     EXERCISE_TOP_K,
     MEMORY_WINDOW_SIZE,
     COLLECTION_NAME,
+    MAX_TOKENS,
 )
 from vector_store import VectorStore
 import re
@@ -322,7 +323,19 @@ JSON格式模板：
                 response_format={ "type": "json_object" }
             )
             content = response.choices[0].message.content
-            return json.loads(content)
+            quiz_data = json.loads(content)
+            
+            # 修复 JSON 中所有文本字段的 LaTeX 格式
+            if "question" in quiz_data:
+                quiz_data["question"] = self.fix_latex_format(quiz_data["question"])
+            if "options" in quiz_data and isinstance(quiz_data["options"], list):
+                quiz_data["options"] = [self.fix_latex_format(opt) for opt in quiz_data["options"]]
+            if "explanation" in quiz_data:
+                quiz_data["explanation"] = self.fix_latex_format(quiz_data["explanation"])
+            if "correct_answer" in quiz_data:
+                quiz_data["correct_answer"] = self.fix_latex_format(quiz_data["correct_answer"])
+            
+            return quiz_data
         except Exception as e:
             print(f"出题失败: {e}")
             return {}
@@ -354,10 +367,26 @@ JSON格式模板：
 
     def generate_outline(self) -> str:
         """根据知识库生成复习大纲"""
-        # 计算知识库规模
+        # 导入 KBManager 获取文件大小
+        from kb_manager import KBManager
+        kb_manager = KBManager()
+        
+        # 获取知识库文件总大小（字节）
+        total_size_bytes = kb_manager.get_kb_total_size(self.kb_name)
+        total_size_mb = total_size_bytes / (1024 * 1024)  # 转换为 MB
+        
+        # 计算知识库文档数量（用于 top_k）
         total_docs = self.vector_store.get_collection_count()
         # 动态调整 top_k，至少20，最多100
-        dynamic_top_k = min(max(20, total_docs // 2), 100)
+        dynamic_top_k = min(max(20, total_docs // 2), 10000)
+        
+        # 动态调整 max_tokens，与文件总大小成正比
+        # 基础值：2000 tokens
+        # 每 1 MB 增加 200 tokens
+        # 最小 2000，最大 8000
+        base_tokens = 2000
+        extra_tokens = int(total_size_mb * 200)
+        dynamic_max_tokens = min(max(base_tokens, base_tokens + extra_tokens), 8000)
         
         # 检索更多上下文
         context, _ = self.retrieve_context("目录 章节 大纲 核心概念 重点 Summary", top_k=dynamic_top_k)
@@ -382,7 +411,8 @@ JSON格式模板：
             response = self.client.chat.completions.create(
                 model=self.model,
                 messages=messages,
-                temperature=0.5
+                temperature=0.5,
+                max_tokens=dynamic_max_tokens
             )
             return response.choices[0].message.content
         except Exception as e:

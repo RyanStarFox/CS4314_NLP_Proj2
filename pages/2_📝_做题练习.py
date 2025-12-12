@@ -9,29 +9,95 @@ st.set_page_config(page_title="做题练习", page_icon="logo.webp", layout="wid
 
 st.markdown("""
 <style>
-    .stButton button {
+    /* 选项按钮样式 - 使其看起来像可点击的卡片，整个选项文本可点击 */
+    /* 通过 key 选择器定位选项按钮（key 包含 "q" 和 "_opt_"） */
+    div[data-testid="stButton"] > button[kind="secondary"] {
         width: 100%;
-        border-radius: 8px;
-        height: 3em;
+        border-radius: 10px;
+        padding: 15px 20px;
+        margin-bottom: 10px;
+        text-align: left;
+        justify-content: flex-start;
+        height: auto;
+        min-height: 3em;
+        white-space: normal;
+        word-wrap: break-word;
+        border: 1px solid rgba(128, 128, 128, 0.3);
+        background-color: var(--secondary-background-color, #f0f0f0);
+        color: var(--text-color, #000);
+        transition: all 0.2s;
     }
+    div[data-testid="stButton"] > button[kind="secondary"]:hover {
+        background-color: var(--background-color, #f5f5f5);
+        border-color: var(--primary-color, #1f77b4);
+        transform: translateY(-2px);
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+    /* 暗黑模式下的选项按钮 */
+    @media (prefers-color-scheme: dark) {
+        div[data-testid="stButton"] > button[kind="secondary"] {
+            background-color: var(--secondary-background-color, #262730);
+            border-color: rgba(255, 255, 255, 0.2);
+            color: var(--text-color, #fff);
+        }
+        div[data-testid="stButton"] > button[kind="secondary"]:hover {
+            background-color: var(--background-color, #0e1117);
+            border-color: var(--primary-color, #1f77b4);
+        }
+    }
+    
     .option-card {
         padding: 15px;
-        border: 1px solid #e0e0e0;
+        border: 1px solid rgba(128, 128, 128, 0.3);
         border-radius: 10px;
         margin-bottom: 10px;
-        cursor: pointer;
-        transition: background-color 0.2s;
+        transition: all 0.2s;
+        background-color: var(--secondary-background-color, #f0f0f0);
+        color: var(--text-color, #000);
     }
-    .option-card:hover {
-        background-color: #f5f5f5;
+    /* 暗黑模式下的选项卡片 */
+    @media (prefers-color-scheme: dark) {
+        .option-card {
+            background-color: var(--secondary-background-color, #262730);
+            border-color: rgba(255, 255, 255, 0.2);
+            color: var(--text-color, #fff);
+        }
     }
     .correct {
-        background-color: #d4edda !important;
-        border-color: #c3e6cb !important;
+        background-color: rgba(40, 167, 69, 0.15) !important;
+        border-color: rgba(40, 167, 69, 0.5) !important;
+    }
+    /* 暗黑模式下的正确选项 */
+    @media (prefers-color-scheme: dark) {
+        .correct {
+            background-color: rgba(40, 167, 69, 0.25) !important;
+            border-color: rgba(40, 167, 69, 0.6) !important;
+        }
     }
     .incorrect {
-        background-color: #f8d7da !important;
-        border-color: #f5c6cb !important;
+        background-color: rgba(220, 53, 69, 0.15) !important;
+        border-color: rgba(220, 53, 69, 0.5) !important;
+    }
+    /* 暗黑模式下的错误选项 */
+    @media (prefers-color-scheme: dark) {
+        .incorrect {
+            background-color: rgba(220, 53, 69, 0.25) !important;
+            border-color: rgba(220, 53, 69, 0.6) !important;
+        }
+    }
+    
+    /* 结果页面的按钮适配暗黑模式 */
+    div[data-testid="stButton"] > button[kind="primary"] {
+        color: var(--text-color, #fff);
+    }
+    @media (prefers-color-scheme: dark) {
+        div[data-testid="stButton"] > button[kind="primary"] {
+            color: var(--text-color, #fff);
+            background-color: var(--primary-color, #ff4b4b);
+        }
+        div[data-testid="stButton"] > button[kind="primary"]:hover {
+            background-color: var(--primary-color, #ff6b6b);
+        }
     }
 </style>
 """, unsafe_allow_html=True)
@@ -146,7 +212,9 @@ elif st.session_state.quiz_state == "quizzing":
     
     question_data = st.session_state.quiz_questions[idx]
     
-    st.markdown(f"### {question_data.get('question', '题目加载错误')}")
+    # 使用 markdown 显示题干，支持 LaTeX 渲染
+    question_text = question_data.get('question', '题目加载错误')
+    st.markdown(f"### {question_text}")
     
     # Check if already answered
     answered = idx in st.session_state.user_answers
@@ -159,8 +227,15 @@ elif st.session_state.quiz_state == "quizzing":
     # Render Options
     # If not answered, show buttons. If answered, show result.
     if not answered:
-        for opt in options:
-            if st.button(opt, key=f"q{idx}_opt_{opt}", use_container_width=True):
+        # 显示选项内容（整个选项文本可点击，使用 button 显示）
+        st.markdown("**请选择答案：**")
+        for i, opt in enumerate(options):
+            # 使用 button 显示选项文本，整个选项可点击
+            # 虽然按钮文本不支持 Markdown，但 LaTeX 格式会被保留
+            option_label = f"{chr(65 + i)}. {opt}"
+            # 使用 CSS 类名来应用样式
+            if st.button(option_label, key=f"q{idx}_opt_{i}", use_container_width=True, type="secondary"):
+                # 添加 CSS 类名（通过 JavaScript 或直接使用内联样式）
                 is_correct = (opt == correct_option)
                 st.session_state.user_answers[idx] = {
                     "answer": opt,
@@ -172,15 +247,8 @@ elif st.session_state.quiz_state == "quizzing":
                     # Generate Summary for Wrong Question
                     summary = None
                     try:
-                        # Quick summarization using the same agent instance
-                        # Assuming 'agent' is available from session state or recreated
                         if 'quiz_agent' in st.session_state:
                             sum_agent = st.session_state.quiz_agent
-                            # A quick call to summarize. Using a very low temp for determinism.
-                            # We can use the chat completion directly for speed/cost if needed, 
-                            # but re-using agent methods is cleaner if available.
-                            # Agent doesn't have a direct 'summarize' method, so we call client directly or add one.
-                            # Let's call client directly to be safe and quick.
                             sum_prompt = f"请用不超过20个字总结以下题目的核心考点或问题大意：\n{question_data.get('question')}"
                             sum_resp = sum_agent.client.chat.completions.create(
                                 model=sum_agent.model,
@@ -194,8 +262,9 @@ elif st.session_state.quiz_state == "quizzing":
                         summary = question_data.get('question')[:20] + "..."
 
                     # Save to Wrong Question DB
+                    kb_name = st.session_state.quiz_config["kb"]
                     question_db.add_result(
-                        kb_name=st.session_state.quiz_config["kb"],
+                        kb_name=kb_name,
                         question_data=question_data,
                         user_answer=opt,
                         is_correct=False,
@@ -207,25 +276,35 @@ elif st.session_state.quiz_state == "quizzing":
         user_choice = st.session_state.user_answers[idx]['answer']
         is_correct = st.session_state.user_answers[idx]['correct']
         
-        for opt in options:
-            btn_color = "secondary"
+        st.markdown("**选项：**")
+        for i, opt in enumerate(options):
             prefix = ""
+            style_class = ""
             
             if opt == correct_option:
                 prefix = "✅ "
-                # Green style is hard with st.button, use markdown for feedback
+                style_class = "correct"
             elif opt == user_choice and not is_correct:
                 prefix = "❌ "
+                style_class = "incorrect"
             
-            st.button(f"{prefix}{opt}", key=f"q{idx}_res_{opt}", disabled=True, use_container_width=True)
+            # 使用 markdown 显示选项，支持 LaTeX 渲染
+            option_label = f"**{chr(65 + i)}.** {opt}"
+            if style_class:
+                st.markdown(f'<div class="option-card {style_class}">{prefix}{option_label}</div>', unsafe_allow_html=True)
+            else:
+                st.markdown(f'<div class="option-card">{prefix}{option_label}</div>', unsafe_allow_html=True)
 
         if is_correct:
             st.success("回答正确！")
         else:
-            st.error(f"回答错误。正确答案是：{correct_option}")
+            # 使用 markdown 显示正确答案，支持 LaTeX 渲染
+            st.error("回答错误。正确答案是：")
+            st.markdown(f"**{correct_option}**")
             
         with st.expander("💡 查看解析", expanded=True):
-            st.write(question_data.get("explanation", "暂无解析"))
+            explanation = question_data.get("explanation", "暂无解析")
+            st.markdown(explanation)
         
         # Next Button
         if idx < total - 1:
@@ -262,11 +341,11 @@ elif st.session_state.quiz_state == "summary":
     
     col_a, col_b = st.columns(2)
     with col_a:
-        if st.button("🔄 再来一组"):
+        if st.button("🔄 再来一组", type="primary"):
             st.session_state.quiz_state = "config"
             st.session_state.quiz_questions = []
             st.rerun()
     with col_b:
-        if st.button("📓 查看错题本"):
+        if st.button("📓 查看错题本", type="primary"):
             st.switch_page("pages/3_📓_错题整理.py")
 

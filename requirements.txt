@@ -18,3 +18,4 @@ streamlit>=1.30.0
 fpdf
 rank_bm25
 jieba
+md2pdf

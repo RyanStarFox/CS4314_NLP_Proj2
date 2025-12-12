@@ -115,7 +115,7 @@ class DocumentLoader:
                             image_descriptions += desc
                         except Exception as e:
                             print(f"PPT图片提取失败: {e}")
-
+            
             slide_text = "\n".join(text_parts)
             formatted_text = f"--- 幻灯片 {slide_num} ---\n{slide_text}\n{image_descriptions}\n"
             slides.append({"text": formatted_text})

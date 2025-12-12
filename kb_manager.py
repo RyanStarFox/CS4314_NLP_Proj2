@@ -58,8 +58,24 @@ class KBManager:
                         rel_path = os.path.relpath(os.path.join(root, f), path)
                         file_list.append(rel_path)
         return sorted(file_list)
+    
+    def get_kb_total_size(self, kb_name):
+        """获取知识库的文件总大小（单位：字节）"""
+        path = os.path.join(self.base_dir, kb_name)
+        total_size = 0
+        if os.path.exists(path):
+            for root, dirs, files in os.walk(path):
+                for f in files:
+                    if not f.startswith('.'):
+                        file_path = os.path.join(root, f)
+                        try:
+                            total_size += os.path.getsize(file_path)
+                        except OSError:
+                            pass  # 忽略无法访问的文件
+        return total_size
 
     def add_file(self, kb_name, uploaded_file):
+        """添加文件到知识库（增量更新模式）"""
         kb_path = os.path.join(self.base_dir, kb_name)
         if not os.path.exists(kb_path):
             return False
@@ -68,18 +84,60 @@ class KBManager:
         with open(file_path, "wb") as f:
             f.write(uploaded_file.getbuffer())
         
-        # Ingest just this file or rebuild KB?
-        # Rebuilding is safer for now to keep sync.
-        self.rebuild_kb_index(kb_name)
+        # 使用增量更新，只处理新上传的文件
+        self.add_single_file_to_index(kb_name, uploaded_file.name)
         return True
 
     def delete_file(self, kb_name, filename):
+        """删除文件（增量更新模式）"""
         file_path = os.path.join(self.base_dir, kb_name, filename)
         if os.path.exists(file_path):
+            # 先从向量数据库中删除该文件的所有文档块
+            vector_store = VectorStore(collection_name=kb_name)
+            vector_store.delete_documents_by_file(filename)
+            
+            # 然后删除文件
             os.remove(file_path)
-            self.rebuild_kb_index(kb_name)
             return True
         return False
+    
+    def add_single_file_to_index(self, kb_name, filename):
+        """将单个文件添加到向量数据库（增量更新）
+        
+        Args:
+            kb_name: 知识库名称
+            filename: 文件名（相对于知识库目录）
+        """
+        kb_path = os.path.join(self.base_dir, kb_name)
+        file_path = os.path.join(kb_path, filename)
+        
+        if not os.path.exists(file_path):
+            print(f"文件不存在: {file_path}")
+            return
+        
+        # 初始化组件
+        loader = DocumentLoader(data_dir=kb_path)
+        splitter = TextSplitter(
+            chunk_size=CHUNK_SIZE, 
+            chunk_overlap=CHUNK_OVERLAP, 
+            size_error=SIZE_ERROR, 
+            overlap_error=OVERLAP_ERROR
+        )
+        vector_store = VectorStore(collection_name=kb_name)
+        
+        # 先删除该文件的旧数据（如果存在）
+        vector_store.delete_documents_by_file(filename)
+        
+        # 加载并处理单个文件
+        print(f"正在处理文件: {filename}")
+        documents = loader.load_document(file_path)
+        
+        if documents:
+            chunks = splitter.split_documents(documents)
+            vector_store.add_documents(chunks)
+            print(f"文件 {filename} 已成功添加到向量数据库")
+        else:
+            print(f"文件 {filename} 未能提取到内容")
 
     def rebuild_kb_index(self, kb_name):
         kb_path = os.path.join(self.base_dir, kb_name)

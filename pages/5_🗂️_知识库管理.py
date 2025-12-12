@@ -49,7 +49,13 @@ else:
                 
                 st.markdown("---")
                 st.markdown("**📤 上传新文档:**")
-                uploaded_files = st.file_uploader(f"上传文件到 {kb}", accept_multiple_files=True, key=f"up_{kb}")
+                st.caption("💡 支持格式：PDF, PPTX, DOCX, MD, TXT")
+                uploaded_files = st.file_uploader(
+                    f"上传文件到 {kb}", 
+                    accept_multiple_files=True, 
+                    type=["pdf", "pptx", "docx", "md", "txt"],
+                    key=f"up_{kb}"
+                )
                 
                 if uploaded_files:
                     if st.button("确认上传并处理", key=f"btn_up_{kb}"):
