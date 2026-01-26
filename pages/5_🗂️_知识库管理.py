@@ -5,6 +5,12 @@ from kb_manager import KBManager
 
 st.set_page_config(page_title="知识库管理", page_icon="logo.webp", layout="wide")
 
+st.markdown("""
+<style>
+    .block-container { padding-top: 2rem; }
+</style>
+""", unsafe_allow_html=True)
+
 st.title("🗂️ 知识库管理")
 
 kb_manager = KBManager()

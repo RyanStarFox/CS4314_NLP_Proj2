@@ -266,10 +266,15 @@ class RAGAgent:
             
         return self.generate_response(query, context, chat_history, image_data=image_data)
 
-    def generate_quiz(self, topic: str, q_type: str, num_options: int = 4, randomize_context: bool = False) -> Dict[str, Any]:
+    def generate_quiz(self, topic: str, q_type: str, question_format: str = "multiple_choice", num_options: int = 4, num_blanks: int = 3, randomize_context: bool = False) -> Dict[str, Any]:
         """生成一道题，返回 JSON 格式
         
         Args:
+            topic: 题目主题
+            q_type: 题目类型（偏概念/偏应用）
+            question_format: 题目格式，"multiple_choice" 或 "fill_in_blank"
+            num_options: 选择题选项数量
+            num_blanks: 填空题空格数量
             randomize_context: 是否使用随机上下文策略 (Top K*5 中随机选 Top K)
         """
         
@@ -292,7 +297,37 @@ class RAGAgent:
         else:
             context, _ = self.retrieve_context(topic)
         
-        prompt = f"""
+        # 根据题目格式生成不同的提示词
+        if question_format == "fill_in_blank":
+            prompt = f"""
+你是一个专业的出题老师。请根据以下资料出一道【{q_type}】类型的填空题。
+资料：
+{context[:2000]}
+
+要求：
+1. 题目类型：{q_type} (偏概念/偏应用)
+2. 空格数量：{num_blanks}个
+3. 在题目中使用 _____ 表示需要填空的位置
+4. 输出格式：必须是严格的JSON格式，不要包含Markdown代码块标记。
+
+JSON格式模板：
+{{
+    "question_type": "fill_in_blank",
+    "question": "题目内容，使用 _____ 表示空格",
+    "answers": ["第一个空的答案", "第二个空的答案", ...],
+    "explanation": "解析"
+}}
+
+示例：
+{{
+    "question_type": "fill_in_blank",
+    "question": "在Python中，_____ 是一种可变的数据类型，而 _____ 是不可变的。",
+    "answers": ["列表(list)", "元组(tuple)"],
+    "explanation": "列表是可变的，可以修改元素；元组是不可变的，一旦创建就不能修改。"
+}}
+"""
+        else:  # multiple_choice
+            prompt = f"""
 你是一个专业的出题老师。请根据以下资料出一道【{q_type}】类型的单选题。
 资料：
 {context[:2000]}
@@ -304,12 +339,14 @@ class RAGAgent:
 
 JSON格式模板：
 {{
+    "question_type": "multiple_choice",
     "question": "题目内容",
     "options": ["选项1", "选项2", ...],
     "correct_answer": "正确选项的内容（必须与options中的某一项完全一致）",
     "explanation": "解析"
 }}
 """
+        
         messages = [
             {"role": "system", "content": "你是一个严谨的出题系统，只输出JSON。"},
             {"role": "user", "content": prompt}
@@ -325,22 +362,32 @@ JSON格式模板：
             content = response.choices[0].message.content
             quiz_data = json.loads(content)
             
+            # 确保包含 question_type 字段
+            if "question_type" not in quiz_data:
+                quiz_data["question_type"] = question_format
+            
             # 修复 JSON 中所有文本字段的 LaTeX 格式
             if "question" in quiz_data:
                 quiz_data["question"] = self.fix_latex_format(quiz_data["question"])
-            if "options" in quiz_data and isinstance(quiz_data["options"], list):
-                quiz_data["options"] = [self.fix_latex_format(opt) for opt in quiz_data["options"]]
+            
+            if question_format == "fill_in_blank":
+                if "answers" in quiz_data and isinstance(quiz_data["answers"], list):
+                    quiz_data["answers"] = [self.fix_latex_format(ans) for ans in quiz_data["answers"]]
+            else:  # multiple_choice
+                if "options" in quiz_data and isinstance(quiz_data["options"], list):
+                    quiz_data["options"] = [self.fix_latex_format(opt) for opt in quiz_data["options"]]
+                if "correct_answer" in quiz_data:
+                    quiz_data["correct_answer"] = self.fix_latex_format(quiz_data["correct_answer"])
+            
             if "explanation" in quiz_data:
                 quiz_data["explanation"] = self.fix_latex_format(quiz_data["explanation"])
-            if "correct_answer" in quiz_data:
-                quiz_data["correct_answer"] = self.fix_latex_format(quiz_data["correct_answer"])
             
             return quiz_data
         except Exception as e:
             print(f"出题失败: {e}")
             return {}
 
-    def generate_quiz_batch(self, count: int, topic: str, q_type: str, num_options: int = 4) -> List[Dict[str, Any]]:
+    def generate_quiz_batch(self, count: int, topic: str, q_type: str, question_format: str = "multiple_choice", num_options: int = 4, num_blanks: int = 3) -> List[Dict[str, Any]]:
         """并行生成多道题目"""
         print(f"开始并行生成 {count} 道题目...")
         questions = []
@@ -350,7 +397,7 @@ JSON格式模板：
         with concurrent.futures.ThreadPoolExecutor(max_workers=min(count, 5)) as executor:
             # 提交任务
             futures = [
-                executor.submit(self.generate_quiz, topic, q_type, num_options, randomize_context=True) 
+                executor.submit(self.generate_quiz, topic, q_type, question_format, num_options, num_blanks, randomize_context=True) 
                 for _ in range(count)
             ]
             
@@ -417,3 +464,36 @@ JSON格式模板：
             return response.choices[0].message.content
         except Exception as e:
             return f"生成大纲失败: {e}"
+
+    def refine_outline(self, current_outline: str, user_feedback: str) -> str:
+        """根据用户反馈修改大纲"""
+        prompt = f"""
+你是一个专业的课程助教。这是你之前生成的复习大纲：
+=== 当前大纲 ===
+{current_outline}
+=== 结束 ===
+
+用户的修改意见：
+{user_feedback}
+
+请根据用户的意见对大纲进行修改和优化。
+要求：
+1. 保持 Markdown 格式。
+2. 针对性地修改，不要随意删除未被提及的正确内容。
+3. 输出完整的、修改后的新大纲。
+"""
+        messages = [
+            {"role": "system", "content": "你是一个擅长修改文档的助教。"},
+            {"role": "user", "content": prompt}
+        ]
+        
+        try:
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                temperature=0.7,
+                max_tokens=4000 
+            )
+            return response.choices[0].message.content
+        except Exception as e:
+            return f"修改大纲失败: {e}"

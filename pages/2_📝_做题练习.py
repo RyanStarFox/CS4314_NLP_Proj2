@@ -9,6 +9,7 @@ st.set_page_config(page_title="做题练习", page_icon="logo.webp", layout="wid
 
 st.markdown("""
 <style>
+    .block-container { padding-top: 4rem; }
     /* 选项按钮样式 - 使其看起来像可点击的卡片，整个选项文本可点击 */
     /* 通过 key 选择器定位选项按钮（key 包含 "q" 和 "_opt_"） */
     div[data-testid="stButton"] > button[kind="secondary"] {
@@ -16,11 +17,13 @@ st.markdown("""
         border-radius: 10px;
         padding: 15px 20px;
         margin-bottom: 10px;
-        text-align: left;
-        justify-content: flex-start;
+        text-align: left !important;
+        display: flex;
+        justify-content: flex-start !important;
+        align-items: center;
         height: auto;
         min-height: 3em;
-        white-space: normal;
+        white-space: normal !important;
         word-wrap: break-word;
         border: 1px solid rgba(128, 128, 128, 0.3);
         background-color: var(--secondary-background-color, #f0f0f0);
@@ -102,7 +105,8 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.title("📝 智能做题练习")
+st.title("📝 智能做题练习") # Title stays same
+
 
 # Initialize Managers
 kb_manager = KBManager()
@@ -138,8 +142,20 @@ if st.session_state.quiz_state == "config":
             q_type_str = "Concept" if "概念" in quiz_type else "Application"
         
         with col2:
+            question_format = st.radio("📝 题目格式", ["选择题", "填空题"])
+            format_str = "multiple_choice" if question_format == "选择题" else "fill_in_blank"
+        
+        col3, col4 = st.columns(2)
+        with col3:
             num_questions = st.number_input("🔢 题目数量", min_value=1, max_value=10, value=3)
-            num_options = st.number_input("🔠 选项数量", min_value=2, max_value=6, value=4)
+        
+        with col4:
+            if format_str == "multiple_choice":
+                num_options = st.number_input("🔠 选项数量", min_value=2, max_value=6, value=4)
+                num_blanks = 3  # 默认值，不显示
+            else:  # fill_in_blank
+                num_blanks = st.number_input("📋 空格数量", min_value=1, max_value=5, value=3)
+                num_options = 4  # 默认值，不显示
         
         # Optional: Topic refinement
         topic_refinement = st.text_input("🔍 重点考察主题 (可选，留空则随机)", placeholder="例如：微积分、矩阵、排序算法...")
@@ -169,8 +185,10 @@ if st.session_state.quiz_state == "config":
             st.session_state.quiz_config = {
                 "kb": selected_kb,
                 "type": q_type_str,
+                "format": format_str,
                 "count": num_questions,
                 "options": num_options,
+                "blanks": num_blanks,
                 "topic": topic_refinement if topic_refinement else "Core Concepts and Key Principles"
             }
             
@@ -181,14 +199,17 @@ if st.session_state.quiz_state == "config":
             
             # Generate Questions
             status_text = st.empty()
-            status_text.text(f"正在并行生成 {num_questions} 道题目，请稍候...")
+            format_name = "选择题" if format_str == "multiple_choice" else "填空题"
+            status_text.text(f"正在并行生成 {num_questions} 道{format_name}，请稍候...")
             
             # Use batch generation with randomization and parallelism
             questions = agent.generate_quiz_batch(
                 count=num_questions, 
                 topic=st.session_state.quiz_config["topic"], 
-                q_type=st.session_state.quiz_config["type"], 
-                num_options=num_options
+                q_type=st.session_state.quiz_config["type"],
+                question_format=format_str,
+                num_options=num_options,
+                num_blanks=num_blanks
             )
             
             if not questions:
@@ -211,6 +232,7 @@ elif st.session_state.quiz_state == "quizzing":
     st.caption(f"Question {idx + 1} / {total}")
     
     question_data = st.session_state.quiz_questions[idx]
+    question_type = question_data.get('question_type', 'multiple_choice')
     
     # 使用 markdown 显示题干，支持 LaTeX 渲染
     question_text = question_data.get('question', '题目加载错误')
@@ -220,101 +242,221 @@ elif st.session_state.quiz_state == "quizzing":
     answered = idx in st.session_state.user_answers
     prev_answer = st.session_state.user_answers[idx]['answer'] if answered else None
     
-    # Options
-    options = question_data.get("options", [])
-    correct_option = question_data.get("correct_answer", "")
-    
-    # Render Options
-    # If not answered, show buttons. If answered, show result.
-    if not answered:
-        # 显示选项内容（整个选项文本可点击，使用 button 显示）
-        st.markdown("**请选择答案：**")
-        for i, opt in enumerate(options):
-            # 使用 button 显示选项文本，整个选项可点击
-            # 虽然按钮文本不支持 Markdown，但 LaTeX 格式会被保留
-            option_label = f"{chr(65 + i)}. {opt}"
-            # 使用 CSS 类名来应用样式
-            if st.button(option_label, key=f"q{idx}_opt_{i}", use_container_width=True, type="secondary"):
-                # 添加 CSS 类名（通过 JavaScript 或直接使用内联样式）
-                is_correct = (opt == correct_option)
-                st.session_state.user_answers[idx] = {
-                    "answer": opt,
-                    "correct": is_correct
-                }
-                if is_correct:
-                    st.session_state.score += 1
+    # 根据题目类型渲染不同的答题界面
+    if question_type == "fill_in_blank":
+        # 填空题
+        answers = question_data.get("answers", [])
+        num_blanks = len(answers)
+        
+        if not answered:
+            # 显示填空输入框
+            st.markdown("**请填写答案：**")
+            user_inputs = []
+            
+            # 为每个空格创建输入框
+            for i in range(num_blanks):
+                blank_input = st.text_input(
+                    f"第 {i+1} 个空格", 
+                    key=f"blank_{idx}_{i}",
+                    placeholder="请输入答案..."
+                )
+                user_inputs.append(blank_input)
+            
+            # 提交按钮
+            if st.button("提交答案", key=f"submit_blank_{idx}", type="primary"):
+                # 检查是否所有空格都已填写
+                if all(inp.strip() for inp in user_inputs):
+                    # 计算正确的空格数量（模糊匹配）
+                    correct_count = 0
+                    for user_inp, correct_ans in zip(user_inputs, answers):
+                        # 简单的模糊匹配：去除空格和大小写
+                        user_normalized = user_inp.strip().lower()
+                        correct_normalized = correct_ans.strip().lower()
+                        if user_normalized in correct_normalized or correct_normalized in user_normalized:
+                            correct_count += 1
+                    
+                    is_correct = (correct_count == num_blanks)
+                    
+                    st.session_state.user_answers[idx] = {
+                        "answer": user_inputs,
+                        "correct": is_correct,
+                        "correct_count": correct_count
+                    }
+                    
+                    if is_correct:
+                        st.session_state.score += 1
+                    else:
+                        # Generate Summary for Wrong Question
+                        summary = None
+                        try:
+                            if 'quiz_agent' in st.session_state:
+                                sum_agent = st.session_state.quiz_agent
+                                sum_prompt = f"请用不超过20个字总结以下题目的核心考点或问题大意：\n{question_data.get('question')}"
+                                sum_resp = sum_agent.client.chat.completions.create(
+                                    model=sum_agent.model,
+                                    messages=[{"role": "user", "content": sum_prompt}],
+                                    max_tokens=50,
+                                    temperature=0.3
+                                )
+                                summary = sum_resp.choices[0].message.content.strip()
+                        except Exception as e:
+                            print(f"Summary generation failed: {e}")
+                            summary = question_data.get('question')[:20] + "..."
+
+                        # Save to Wrong Question DB
+                        kb_name = st.session_state.quiz_config["kb"]
+                        question_db.add_result(
+                            kb_name=kb_name,
+                            question_data=question_data,
+                            user_answer=str(user_inputs),
+                            is_correct=False,
+                            summary=summary,
+                            mistake_book=kb_name  # Explicitly use KB name
+                        )
+                    st.rerun()
                 else:
-                    # Generate Summary for Wrong Question
-                    summary = None
-                    try:
-                        if 'quiz_agent' in st.session_state:
-                            sum_agent = st.session_state.quiz_agent
-                            sum_prompt = f"请用不超过20个字总结以下题目的核心考点或问题大意：\n{question_data.get('question')}"
-                            sum_resp = sum_agent.client.chat.completions.create(
-                                model=sum_agent.model,
-                                messages=[{"role": "user", "content": sum_prompt}],
-                                max_tokens=50,
-                                temperature=0.3
-                            )
-                            summary = sum_resp.choices[0].message.content.strip()
-                    except Exception as e:
-                        print(f"Summary generation failed: {e}")
-                        summary = question_data.get('question')[:20] + "..."
-
-                    # Save to Wrong Question DB
-                    kb_name = st.session_state.quiz_config["kb"]
-                    question_db.add_result(
-                        kb_name=kb_name,
-                        question_data=question_data,
-                        user_answer=opt,
-                        is_correct=False,
-                        summary=summary
-                    )
-                st.rerun()
-    else:
-        # Show Result
-        user_choice = st.session_state.user_answers[idx]['answer']
-        is_correct = st.session_state.user_answers[idx]['correct']
-        
-        st.markdown("**选项：**")
-        for i, opt in enumerate(options):
-            prefix = ""
-            style_class = ""
+                    st.warning("请填写所有空格后再提交")
+        else:
+            # 显示结果
+            user_inputs = st.session_state.user_answers[idx]['answer']
+            is_correct = st.session_state.user_answers[idx]['correct']
+            correct_count = st.session_state.user_answers[idx].get('correct_count', 0)
             
-            if opt == correct_option:
-                prefix = "✅ "
-                style_class = "correct"
-            elif opt == user_choice and not is_correct:
-                prefix = "❌ "
-                style_class = "incorrect"
+            st.markdown("**你的答案：**")
+            for i, (user_inp, correct_ans) in enumerate(zip(user_inputs, answers)):
+                user_normalized = user_inp.strip().lower()
+                correct_normalized = correct_ans.strip().lower()
+                is_blank_correct = user_normalized in correct_normalized or correct_normalized in user_normalized
+                
+                if is_blank_correct:
+                    st.markdown(f'<div class="option-card correct">✅ 第 {i+1} 个空格: {user_inp}</div>', unsafe_allow_html=True)
+                else:
+                    st.markdown(f'<div class="option-card incorrect">❌ 第 {i+1} 个空格: {user_inp}</div>', unsafe_allow_html=True)
             
-            # 使用 markdown 显示选项，支持 LaTeX 渲染
-            option_label = f"**{chr(65 + i)}.** {opt}"
-            if style_class:
-                st.markdown(f'<div class="option-card {style_class}">{prefix}{option_label}</div>', unsafe_allow_html=True)
+            st.markdown("**正确答案：**")
+            for i, ans in enumerate(answers):
+                st.markdown(f'<div class="option-card correct">第 {i+1} 个空格: {ans}</div>', unsafe_allow_html=True)
+            
+            if is_correct:
+                st.success("全部正确！")
             else:
-                st.markdown(f'<div class="option-card">{prefix}{option_label}</div>', unsafe_allow_html=True)
-
-        if is_correct:
-            st.success("回答正确！")
-        else:
-            # 使用 markdown 显示正确答案，支持 LaTeX 渲染
-            st.error("回答错误。正确答案是：")
-            st.markdown(f"**{correct_option}**")
+                st.error(f"答对 {correct_count}/{num_blanks} 个空格")
             
-        with st.expander("💡 查看解析", expanded=True):
-            explanation = question_data.get("explanation", "暂无解析")
-            st.markdown(explanation)
+            with st.expander("💡 查看解析", expanded=True):
+                explanation = question_data.get("explanation", "暂无解析")
+                st.markdown(explanation)
+            
+            # Next Button
+            if idx < total - 1:
+                if st.button("下一题 ➡️", type="primary"):
+                    st.session_state.current_q_index += 1
+                    st.rerun()
+            else:
+                if st.button("查看结果 🏁", type="primary"):
+                    st.session_state.quiz_state = "summary"
+                    st.rerun()
+    
+    else:  # multiple_choice
+        # 选择题
+        options = question_data.get("options", [])
+        correct_option = question_data.get("correct_answer", "")
         
-        # Next Button
-        if idx < total - 1:
-            if st.button("下一题 ➡️", type="primary"):
-                st.session_state.current_q_index += 1
-                st.rerun()
+        # Render Options
+        # If not answered, show buttons. If answered, show result.
+        if not answered:
+            # 显示选项内容（整个选项文本可点击，使用 button 显示）
+            st.markdown("**请选择答案：**")
+            for i, opt in enumerate(options):
+                # 使用 button 显示选项文本，整个选项可点击
+                # 虽然按钮文本不支持 Markdown，但 LaTeX 格式会被保留
+                option_label = f"{chr(65 + i)}. {opt}"
+                # 使用 CSS 类名来应用样式
+                if st.button(option_label, key=f"q{idx}_opt_{i}", use_container_width=True, type="secondary"):
+                    # 添加 CSS 类名（通过 JavaScript 或直接使用内联样式）
+                    is_correct = (opt == correct_option)
+                    st.session_state.user_answers[idx] = {
+                        "answer": opt,
+                        "correct": is_correct
+                    }
+                    if is_correct:
+                        st.session_state.score += 1
+                    else:
+                        # Generate Summary for Wrong Question
+                        summary = None
+                        try:
+                            if 'quiz_agent' in st.session_state:
+                                sum_agent = st.session_state.quiz_agent
+                                sum_prompt = f"请用不超过20个字总结以下题目的核心考点或问题大意：\n{question_data.get('question')}"
+                                sum_resp = sum_agent.client.chat.completions.create(
+                                    model=sum_agent.model,
+                                    messages=[{"role": "user", "content": sum_prompt}],
+                                    max_tokens=50,
+                                    temperature=0.3
+                                )
+                                summary = sum_resp.choices[0].message.content.strip()
+                        except Exception as e:
+                            print(f"Summary generation failed: {e}")
+                            summary = question_data.get('question')[:20] + "..."
+
+                        # Save to Wrong Question DB
+                        kb_name = st.session_state.quiz_config["kb"]
+                        try:
+                            question_db.add_result(
+                                kb_name=kb_name,
+                                question_data=question_data,
+                                user_answer=opt,
+                                is_correct=False,
+                                summary=summary,
+                                mistake_book=kb_name  # Explicitly use KB name as mistake book
+                            )
+                        except Exception as e:
+                            st.error(f"保存错题失败: {e}")
+                            print(f"Error saving wrong question: {e}")
+                            
+                    st.rerun()
         else:
-            if st.button("查看结果 🏁", type="primary"):
-                st.session_state.quiz_state = "summary"
-                st.rerun()
+            # Show Result
+            user_choice = st.session_state.user_answers[idx]['answer']
+            is_correct = st.session_state.user_answers[idx]['correct']
+            
+            st.markdown("### 📝 答案解析")
+            
+            for i, opt in enumerate(options):
+                option_label = f"**{chr(65 + i)}.** {opt}"
+                
+                if opt == correct_option:
+                    # 正确选项
+                    with st.container():
+                        st.success(option_label, icon="✅")
+                elif opt == user_choice and not is_correct:
+                    # 用户选错的选项
+                    with st.container():
+                        st.error(option_label, icon="❌")
+                else:
+                    # 其他普通选项
+                    with st.container(border=True):
+                        st.markdown(option_label)
+
+            if is_correct:
+                st.success("回答正确！")
+            else:
+                # 使用 markdown 显示正确答案，支持 LaTeX 渲染
+                st.error("回答错误。正确答案是：")
+                st.markdown(f"**{correct_option}**")
+                
+            with st.expander("💡 查看解析", expanded=True):
+                explanation = question_data.get("explanation", "暂无解析")
+                st.markdown(explanation)
+            
+            # Next Button
+            if idx < total - 1:
+                if st.button("下一题 ➡️", type="primary"):
+                    st.session_state.current_q_index += 1
+                    st.rerun()
+            else:
+                if st.button("查看结果 🏁", type="primary"):
+                    st.session_state.quiz_state = "summary"
+                    st.rerun()
 
 # --- Phase 3: Summary ---
 elif st.session_state.quiz_state == "summary":

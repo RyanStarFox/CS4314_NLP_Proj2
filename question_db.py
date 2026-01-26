@@ -54,10 +54,37 @@ class QuestionDB:
             self._save_db(db)
             print("已迁移旧版本错题数据到多错题本结构")
 
-    def list_mistake_books(self):
-        """获取所有错题本列表"""
+    def list_mistake_books(self, include_archived=True):
+        """获取错题本列表
+        
+        Args:
+            include_archived: 是否包含已归档的错题本，默认True返回所有
+        
+        Returns:
+            list of (book_name, is_archived) tuples if include_archived is True,
+            else list of book_name strings (only unarchived)
+        """
         db = self._load_db()
-        return list(db.get("mistake_books", {"默认错题本": []}).keys())
+        books = db.get("mistake_books", {"默认错题本": []})
+        archived_books = set(db.get("archived_books", []))
+        
+        if include_archived:
+            return [(name, name in archived_books) for name in books.keys()]
+        else:
+            return [name for name in books.keys() if name not in archived_books]
+            
+    def toggle_book_archive(self, book_name):
+        """归档或取消归档错题本"""
+        db = self._load_db()
+        if "archived_books" not in db:
+            db["archived_books"] = []
+            
+        if book_name in db["archived_books"]:
+            db["archived_books"].remove(book_name)
+        else:
+            db["archived_books"].append(book_name)
+            
+        self._save_db(db)
     
     def create_mistake_book(self, book_name):
         """创建新的错题本"""
@@ -72,13 +99,34 @@ class QuestionDB:
         return False
     
     def delete_mistake_book(self, book_name):
-        """删除错题本（默认错题本不能删除）"""
-        if book_name == "默认错题本":
+        """删除错题本"""
+        db = self._load_db()
+        books = db.get("mistake_books", {})
+        
+        if book_name in books:
+            del books[book_name]
+            # 如果全部删完了，创建一个新的默认错题本
+            if not books:
+                books["默认错题本"] = []
+            self._save_db(db)
+            return True
+        return False
+
+    def rename_mistake_book(self, old_name, new_name):
+        """重命名错题本"""
+        if old_name == new_name or not new_name:
             return False
         
         db = self._load_db()
-        if book_name in db.get("mistake_books", {}):
-            del db["mistake_books"][book_name]
+        books = db.get("mistake_books", {})
+        
+        if old_name in books and new_name not in books:
+            # 转移数据
+            books[new_name] = books.pop(old_name)
+            # 更新题目中的 kb_name 字段（如果需要，虽然通常不需要，因为是动态获取的）
+            for q in books[new_name]:
+                q["kb_name"] = new_name # 关联到新名称
+            
             self._save_db(db)
             return True
         return False
@@ -105,7 +153,11 @@ class QuestionDB:
             "user_answer": user_answer,
             "is_correct": is_correct,
             "summary": summary,  # Store LLM summary
-            "status": status  # 处理状态
+            "status": status,  # 处理状态
+            "familiarity_score": 2,  # 新增：陌生分数，默认为 2
+            "archived": False,  # 新增：归档状态
+            "last_reviewed": None,  # 新增：最后复习时间
+            "review_count": 0  # 新增：复习次数
         }
         
         db["history"].append(record)
@@ -132,7 +184,6 @@ class QuestionDB:
             db["mistake_books"][mistake_book].append(record)
         
         self._save_db(db)
-        return record["id"]  # 返回记录 ID，用于后续更新
         return record["id"]  # 返回记录 ID，用于后续更新
     
     def update_question_status(self, record_id, question_data=None, summary=None, status="completed", mistake_book=None):
@@ -210,6 +261,24 @@ class QuestionDB:
         
         self._save_db(db)
 
+    def save_outline(self, kb_name, outline_content, status="completed"):
+        """Save generated outline for a specific knowledge base."""
+        db = self._load_db()
+        if "outlines" not in db:
+            db["outlines"] = {}
+        
+        db["outlines"][kb_name] = {
+            "content": outline_content,
+            "status": status,
+            "timestamp": time.time()
+        }
+        self._save_db(db)
+
+    def get_outline(self, kb_name):
+        """Retrieve stored outline for a specific knowledge base."""
+        db = self._load_db()
+        return db.get("outlines", {}).get(kb_name)
+
     def get_wrong_questions(self, kb_name=None, mistake_book=None):
         """获取错题
         
@@ -254,4 +323,144 @@ class QuestionDB:
                 ]
         
         self._save_db(db)
+    
+    def update_familiarity_score(self, record_id, is_correct, mistake_book=None):
+        """更新陌生分数
+        
+        规则：
+        - 做错：+1 分
+        - 做对：
+          - ≥8 分：÷2 取整
+          - <8 分：-1 分
+        - 陌生分数 = 0 时自动归档
+        
+        Args:
+            record_id: 记录 ID
+            is_correct: 是否答对
+            mistake_book: 错题本名称
+        
+        Returns:
+            (new_score, archived): 新分数和归档状态
+        """
+        db = self._load_db()
+        
+        def update_score(question):
+            """更新单个题目的分数"""
+            # 确保有陌生分数字段（兼容旧数据）
+            if "familiarity_score" not in question:
+                question["familiarity_score"] = 2
+            if "archived" not in question:
+                question["archived"] = False
+            if "review_count" not in question:
+                question["review_count"] = 0
+            
+            current_score = question["familiarity_score"]
+            
+            if is_correct:
+                # 做对了
+                if current_score >= 8:
+                    question["familiarity_score"] = current_score // 2
+                else:
+                    question["familiarity_score"] = max(0, current_score - 1)
+            else:
+                # 做错了
+                question["familiarity_score"] = current_score + 1
+            
+            # 更新复习信息
+            question["last_reviewed"] = time.time()
+            question["review_count"] = question.get("review_count", 0) + 1
+            
+            # 自动归档（陌生分数为 0）
+            if question["familiarity_score"] == 0:
+                question["archived"] = True
+            
+            return question["familiarity_score"], question["archived"]
+        
+        # 更新旧字段（兼容性）
+        for q in db.get("wrong_questions", []):
+            if q["id"] == record_id:
+                update_score(q)
+                break
+        
+        # 更新错题本中的记录
+        if mistake_book:
+            for q in db.get("mistake_books", {}).get(mistake_book, []):
+                if q["id"] == record_id:
+                    new_score, archived = update_score(q)
+                    self._save_db(db)
+                    return new_score, archived
+        else:
+            # 如果没有指定错题本，搜索所有错题本
+            for book_name, questions in db.get("mistake_books", {}).items():
+                for q in questions:
+                    if q["id"] == record_id:
+                        new_score, archived = update_score(q)
+                        self._save_db(db)
+                        return new_score, archived
+        
+        self._save_db(db)
+        return None, None
+    
+    def toggle_archive(self, record_id, mistake_book=None):
+        """手动归档/取消归档错题
+        
+        Args:
+            record_id: 记录 ID
+            mistake_book: 错题本名称
+        """
+        db = self._load_db()
+        
+        # 更新旧字段（兼容性）
+        for q in db.get("wrong_questions", []):
+            if q["id"] == record_id:
+                if "archived" not in q:
+                    q["archived"] = False
+                q["archived"] = not q["archived"]
+                # 如果取消归档，重置陌生分数为 2
+                if not q["archived"]:
+                    q["familiarity_score"] = 2
+                break
+        
+        # 更新错题本中的记录
+        if mistake_book:
+            for q in db.get("mistake_books", {}).get(mistake_book, []):
+                if q["id"] == record_id:
+                    if "archived" not in q:
+                        q["archived"] = False
+                    q["archived"] = not q["archived"]
+                    # 如果取消归档，重置陌生分数为 2
+                    if not q["archived"]:
+                        q["familiarity_score"] = 2
+                    break
+        else:
+            # 如果没有指定错题本，搜索所有错题本
+            for book_name, questions in db.get("mistake_books", {}).items():
+                for q in questions:
+                    if q["id"] == record_id:
+                        if "archived" not in q:
+                            q["archived"] = False
+                        q["archived"] = not q["archived"]
+                        # 如果取消归档，重置陌生分数为 2
+                        if not q["archived"]:
+                            q["familiarity_score"] = 2
+                        break
+        
+        self._save_db(db)
+    
+    def get_archived_questions(self, mistake_book=None):
+        """获取归档的错题
+        
+        Args:
+            mistake_book: 错题本名称，如果不指定则返回默认错题本的归档题目
+        """
+        db = self._load_db()
+        
+        if mistake_book:
+            questions = db.get("mistake_books", {}).get(mistake_book, [])
+        else:
+            questions = db.get("mistake_books", {}).get("默认错题本", [])
+        
+        # 筛选归档的题目
+        archived = [q for q in questions if q.get("archived", False)]
+        return archived
 

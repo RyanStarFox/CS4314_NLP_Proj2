@@ -2,7 +2,7 @@ import streamlit as st
 import os
 
 st.set_page_config(
-    page_title="CS4314 智能课程助教",
+    page_title="智能课程助教",
     page_icon="logo.webp",
     layout="wide",
     initial_sidebar_state="collapsed"  # 默认隐藏侧边栏
@@ -11,6 +11,7 @@ st.set_page_config(
 # --- Custom CSS for "Card" Style (Dark Mode Adapted) ---
 st.markdown("""
 <style>
+    .block-container { padding-top: 2rem; }
     /* Global Background & Font - CSS Variables for Dark Mode Support */
     .stApp {
         /* No fixed background, let Streamlit theme handle it */
@@ -90,6 +91,12 @@ st.markdown("""
         font-weight: 400;
         margin-bottom: 3rem;
     }
+    
+    /* Reduce top padding for main container */
+    .block-container {
+        padding-top: 2rem !important;
+        padding-bottom: 2rem !important;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -99,7 +106,7 @@ st.markdown("""
 #     with col_logo_2:
 #         st.image("logo.webp", width=120)
 
-st.markdown('<h1 class="main-title">CS4314 智能课程助教系统</h1>', unsafe_allow_html=True)
+st.markdown('<h1 class="main-title">智能课程助教系统</h1>', unsafe_allow_html=True)
 st.markdown('<p class="sub-title">基于 RAG 技术的全能学习助手 · 答疑 · 刷题 · 复习 · 管理</p>', unsafe_allow_html=True)
     
 st.markdown("---")
@@ -170,14 +177,15 @@ with col5:
     """, unsafe_allow_html=True)
 
 with col6:
-    # Placeholder
     st.markdown("""
-    <div class="nav-card" style="background-color: transparent; border: 2px dashed rgba(128,128,128,0.3); box-shadow: none; cursor: default;">
-        <div class="card-icon" style="opacity: 0.3;">🚧</div>
-        <h3 style="color: var(--text-color); opacity: 0.5;">更多功能</h3>
-        <p style="opacity: 0.5;">敬请期待...</p>
-    </div>
+    <a href="使用说明" class="card-link" target="_self">
+        <div class="nav-card">
+            <div class="card-icon">📖</div>
+            <h3>使用说明</h3>
+            <p>查看系统详细功能介绍与操作指南</p>
+        </div>
+    </a>
     """, unsafe_allow_html=True)
 
 st.markdown("---")
-st.caption("© 2025 [SJTU CS4314 NLP Project Group](https://github.com/RyanStarFox/CS4314_NLP_Proj2)")
+st.caption("© 2025 [CS4314 Project, Developed by RyanStarFox and Zhou Zihan](https://github.com/RyanStarFox/CS4314_NLP_Proj2)")

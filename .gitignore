@@ -1,89 +1,37 @@
 # Python
 __pycache__/
-*.py[cod]
-*$py.class
-*.so
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
+*.pyc
+*.pyo
+*.pyd
 
-# 虚拟环境
-venv/
-env/
-ENV/
-.venv
-
-# 环境变量和配置文件
+# Environment
 .env
-.env.local
+.venv
+env/
+venv/
+anaconda3/
 
-# 数据目录
-data/
-vector_db/
+# OS
+.DS_Store
 
 # IDE
-.vscode/
 .idea/
-*.swp
-*.swo
-*~
-.project
-.pydevproject
-.settings/
+.vscode/
 
-# Jupyter Notebook
-.ipynb_checkpoints
-*.ipynb
+# Streamlit
+.streamlit/
+chromedriver
 
-# 日志文件
-*.log
-logs/
+# Project Specific
+data/
+!data/cs_math/
+!data/cs_math/*.pdf
+!data/cs_math/*.md
+!data/cs_math/*.docx
+!data/cs_math/*.pptx
+!data/cs_math/*.scss
 
-# 测试覆盖率
-.coverage
-.pytest_cache/
-.mypy_cache/
-.dmypy.json
-dmypy.json
-
-# macOS
-.DS_Store
-.AppleDouble
-.LSOverride
-._*
-
-# Windows
-Thumbs.db
-ehthumbs.db
-Desktop.ini
-
-# 临时文件
-*.tmp
-*.temp
+vector_db/
+*.backup
 *.bak
-*.swp
-*~
-
-# 模型和缓存文件
-*.pkl
-*.pickle
-*.h5
-*.hdf5
-*.pt
-*.pth
-*.ckpt
-.cache/
-
+*.log

@@ -9,6 +9,7 @@ st.set_page_config(page_title="智能助教", page_icon="logo.webp", layout="wid
 
 st.markdown("""
 <style>
+    .block-container { padding-top: 2rem; }
     .stChatMessage { 
         padding: 1.2rem; 
         border-radius: 16px; 
@@ -111,36 +112,94 @@ if st.session_state.messages and st.session_state.messages[-1]["role"] == "user"
         full_response = ""
         
         try:
+            # 检查是否是简单的选择题回答
+            is_simple_answer = len(prompt) < 10 and "选" in prompt
+            
+            # 如果不是简单回答，先检索上下文用于显示参考资料
+            docs = []
+            if not is_simple_answer:
+                context_str, docs = agent.retrieve_context(prompt)
+            
+            # 使用流式输出
             with st.spinner("思考中..."):
-                response_text = agent.answer_question(
-                    prompt, 
-                    chat_history=st.session_state.messages[:-1],
-                    image_data=current_image_data
+                # 构建消息
+                from rag_agent import RAGAgent
+                
+                # 准备上下文
+                if is_simple_answer:
+                    context = ""
+                else:
+                    context, _ = agent.retrieve_context(prompt)
+                
+                # 构建消息
+                messages = [{"role": "system", "content": agent.system_prompt}]
+                
+                # 添加历史记录（不包括当前消息）
+                if st.session_state.messages[:-1]:
+                    clean_history = []
+                    for msg in st.session_state.messages[:-1][-5:]:  # 只取最近 5 条
+                        content = msg.get("content", "")
+                        role = msg.get("role", "user")
+                        clean_history.append({"role": role, "content": content})
+                    messages.extend(clean_history)
+                
+                # 构建用户消息
+                if is_simple_answer:
+                    user_text = f"""(用户正在回答上一轮的选择题)
+学生回答：{prompt}
+请执行【作业批改】：判断对错并解析。
+"""
+                else:
+                    user_text = f"""请阅读资料回答问题。
+=== 课程资料 ===
+{context if context else "（未检索到资料，尝试基于常识回答）"}
+=== 结束 ===
+学生问题：{prompt}
+"""
+                
+                # 多模态支持
+                if current_image_data:
+                    content_payload = [
+                        {"type": "text", "text": user_text},
+                        {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{current_image_data}"}}
+                    ]
+                    current_model = agent.vl_model
+                else:
+                    content_payload = user_text
+                    current_model = agent.model
+                
+                messages.append({"role": "user", "content": content_payload})
+                
+                # 流式调用 API
+                stream = agent.client.chat.completions.create(
+                    model=current_model,
+                    messages=messages,
+                    temperature=0.3,
+                    max_tokens=1500,
+                    stream=True  # 启用流式输出
                 )
                 
-                # Retrieve context only for showing sources (agent.answer_question does it internally but returns string)
-                # To show sources nicely, we might need to modify agent or just parse the response if it includes sources?
-                # The current agent.answer_question returns text. 
-                # Let's trust the agent's internal retrieval for now or manually retrieve to show docs.
-                # Actually, agent.answer_question calls retrieve_context internally.
-                # If we want to show sources in an expander like before, we should call retrieve_context here.
+                # 逐字显示
+                for chunk in stream:
+                    if chunk.choices[0].delta.content is not None:
+                        full_response += chunk.choices[0].delta.content
+                        message_placeholder.markdown(full_response + "▌")
                 
-                # Check if it's a simple answer or retrieval needed
-                if not (len(prompt) < 10 and "选" in prompt):
-                     context_str, docs = agent.retrieve_context(prompt)
-                     if docs:
-                         with st.expander(f"📚 参考资料 ({len(docs)} 条)", expanded=False):
-                             st.markdown(context_str)
-
-                # Streaming simulation
-                for char in response_text:
-                    full_response += char
-                    time.sleep(0.002) 
-                    message_placeholder.markdown(full_response + "▌")
+                # 应用 LaTeX 格式修复
+                full_response = agent.fix_latex_format(full_response)
                 message_placeholder.markdown(full_response)
+            
+            # 显示参考资料
+            if docs:
+                with st.expander(f"📚 参考资料 ({len(docs)} 条)", expanded=False):
+                    context_str = ""
+                    for i, doc_info in enumerate(docs):
+                        context_str += f"【资料 {i+1}】({doc_info['source_label']}):\n{doc_info['content']}\n\n"
+                    st.markdown(context_str)
         
         except Exception as e:
             full_response = f"❌ 发生错误: {str(e)}"
             message_placeholder.markdown(full_response)
             
     st.session_state.messages.append({"role": "assistant", "content": full_response})
+
