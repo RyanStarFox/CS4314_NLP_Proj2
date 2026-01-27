@@ -231,6 +231,30 @@ class QuestionDB:
                         break
         
         self._save_db(db)
+        
+    # Alias for compatibility
+    def update_result(self, record_id, book_name, data):
+        """兼容旧的 update_result 调用"""
+        # data 可能是失败信息，也可能是完整数据
+        # 失败信息: {"question": "...", "explanation": "...", "status": "failed"}
+        if data.get("status") == "failed":
+            self.update_question_status(
+                record_id, 
+                question_data={"question": data.get("question", "")}, 
+                summary=data.get("explanation", ""), 
+                status="failed",
+                mistake_book=book_name
+            )
+        else:
+            # 正常更新逻辑，这里可能需要根据实际传入的 data 结构调整
+            # 假设 data 是 {"status": "completed", "question": ..., "summary": ...}
+            self.update_question_status(
+                record_id,
+                question_data=data.get("question"),
+                summary=data.get("summary"),
+                status=data.get("status", "completed"),
+                mistake_book=book_name
+            )
 
     def update_correct_answer(self, record_id, new_correct_answer, mistake_book=None):
         """Update the correct answer for a specific wrong question record."""

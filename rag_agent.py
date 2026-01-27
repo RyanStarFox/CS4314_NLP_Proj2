@@ -11,6 +11,7 @@ from config import (
     MEMORY_WINDOW_SIZE,
     COLLECTION_NAME,
     MAX_TOKENS,
+    get_openai_client,
 )
 from vector_store import VectorStore
 import re
@@ -27,7 +28,7 @@ class RAGAgent:
         self.vl_model = VL_MODEL_NAME 
         self.kb_name = kb_name
 
-        self.client = OpenAI(api_key=OPENAI_API_KEY, base_url=OPENAI_API_BASE)
+        self.client = get_openai_client(api_key=OPENAI_API_KEY, base_url=OPENAI_API_BASE)
         # 初始化 VectorStore 时指定 collection_name
         self.vector_store = VectorStore(collection_name=kb_name)
 

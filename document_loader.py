@@ -8,7 +8,7 @@ from pptx.enum.shapes import MSO_SHAPE_TYPE
 import base64
 import io
 from openai import OpenAI
-from config import DATA_DIR, OPENAI_API_KEY, OPENAI_API_BASE, ENABLE_IMAGE_CAPTIONING, IMAGE_CAPTION_MODEL
+from config import DATA_DIR, OPENAI_API_KEY, OPENAI_API_BASE, ENABLE_IMAGE_CAPTIONING, IMAGE_CAPTION_MODEL, VL_API_KEY, VL_API_BASE, get_openai_client
 
 class DocumentLoader:
     def __init__(
@@ -20,7 +20,7 @@ class DocumentLoader:
         
         # 初始化用于 Image Captioning 的客户端
         if ENABLE_IMAGE_CAPTIONING:
-            self.client = OpenAI(api_key=OPENAI_API_KEY, base_url=OPENAI_API_BASE)
+            self.client = get_openai_client(api_key=VL_API_KEY, base_url=VL_API_BASE)
 
     def _generate_image_caption(self, image_bytes: bytes, source_info: str = "") -> str:
         """调用视觉大模型生成图片描述"""

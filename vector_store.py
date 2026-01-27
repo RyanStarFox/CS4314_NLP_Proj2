@@ -9,12 +9,13 @@ from tqdm import tqdm
 from config import (
     VECTOR_DB_PATH,
     COLLECTION_NAME,
-    OPENAI_API_KEY,
-    OPENAI_API_BASE,
     OPENAI_EMBEDDING_MODEL,
     TOP_K,
     ENABLE_HYBRID_SEARCH,
-    HYBRID_SEARCH_ALPHA
+    HYBRID_SEARCH_ALPHA,
+    EMBEDDING_API_KEY,
+    EMBEDDING_API_BASE,
+    get_openai_client
 )
 import hashlib
 from rank_bm25 import BM25Okapi
@@ -26,14 +27,12 @@ class VectorStore:
         self,
         db_path: str = VECTOR_DB_PATH,
         collection_name: str = COLLECTION_NAME,
-        api_key: str = OPENAI_API_KEY,
-        api_base: str = OPENAI_API_BASE,
     ):
         self.db_path = db_path
         self.collection_name = collection_name
 
         # 初始化OpenAI客户端
-        self.client = OpenAI(api_key=api_key, base_url=api_base)
+        self.client = get_openai_client(api_key=EMBEDDING_API_KEY, base_url=EMBEDDING_API_BASE)
 
         # 初始化ChromaDB
         os.makedirs(db_path, exist_ok=True)
