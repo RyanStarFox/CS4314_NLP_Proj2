@@ -225,13 +225,29 @@ def process_question_async(rid, book_name, q_c, q_o, q_correct, q_e, ocr_b64, at
             if start != -1 and end != -1:
                 s = s[start:end+1]
             
-            # CRITICAL FIX 1: Replace real newlines with \n escape
-            # JSON strings cannot contain real newlines
-            # CRITICAL FIX: Escape ALL invalid JSON escape sequences
-            # Valid JSON escapes: \n, \t, \r, \b, \f, \\, \/, \"
-            # LaTeX uses many others like \(, \), \{, \}, \alpha (backslashes followed by non-escape chars)
-            # We must escape the backslash for those.
-            s = re.sub(r'\\(?![/\\bfnrtu"])', r'\\\\', s)
+            # CRITICAL FIX for LaTeX in JSON:
+            # Problem: \nabla -> \n (newline) + "abla", \rho -> \r + "ho", \frac -> \f + "rac"
+            # Solution: Escape ALL backslashes, then restore only intended newlines
+            
+            # Step 1: Escape ALL backslashes (turn \ into \\)
+            s = s.replace('\\', '\\\\')
+            
+            # Step 2: Restore intended escape sequences:
+            # - \\n followed by digit, space, punctuation, or quote → real newline (\n)
+            # - \\n followed by letter → LaTeX command like \nabla, keep as \\n
+            # Same logic for \\r, \\t, etc.
+            
+            # Restore \\n → \n only when NOT followed by a letter (i.e., it's a real newline)
+            s = re.sub(r'\\\\n(?![a-zA-Z])', r'\\n', s)
+            # Restore \\r → \r only when NOT followed by a letter
+            s = re.sub(r'\\\\r(?![a-zA-Z])', r'\\r', s)
+            # Restore \\t → \t only when NOT followed by a letter  
+            s = re.sub(r'\\\\t(?![a-zA-Z])', r'\\t', s)
+            # Restore \\\\ → \\ (escaped backslash for JSON)
+            s = s.replace('\\\\\\\\', '\\\\')
+            # Restore \\" → \" (escaped quote)
+            s = s.replace('\\\\"', '\\"')
+            
             return s
 
         # ========== STAGE 1: PURE OCR ==========
@@ -278,6 +294,15 @@ def process_question_async(rid, book_name, q_c, q_o, q_correct, q_e, ocr_b64, at
         
         if not source_text:
             print("No source text available")
+            # Update status to failed with helpful message
+            qk = QuestionDB()
+            qk.update_question_status(
+                record_id=rid,
+                question_data={"question": "❌ 未提供内容", "explanation": "请输入题目内容或上传图片"},
+                summary="❌ 未提供内容",
+                status="failed",
+                mistake_book=book_name
+            )
             return
 
         # ========== STAGE 2: CLASSIFICATION ==========
@@ -708,7 +733,8 @@ Output:
                   final_correct = _map_to_letter(final_correct)
         
         # Multi-select normalization fallback
-        if detected_type == "multi_select" and q_correct:
+        # Note: Use final_correct (not q_correct) to normalize AI-generated answers too
+        if detected_type == "multi_select" and final_correct:
              cleaned = final_correct.replace('，', ',').replace('|', ',').replace(' ', ',')
              # Check if it looks like "13" (digits string) or just comma separated
              if ',' not in cleaned and len(cleaned) > 1:
@@ -725,8 +751,8 @@ Output:
             "question_type": detected_type,
             "question": final_question,
             "options": final_options.split('\n') if final_options and "FILL_IN_BLANK" not in final_options else [],
-            "answers": json.loads(final_options[14:]) if final_options and "FILL_IN_BLANK" in final_options else (res_2.get("answers", []) if detected_type == "short_answer" else None),
-            "correct_answer": final_correct if "FILL_IN_BLANK" not in final_correct else None,
+            "answers": json.loads(final_options[14:]) if final_options and "FILL_IN_BLANK" in final_options else (res_2.get("answers", []) if detected_type in ["short_answer", "fill_in_blank"] else None),
+            "correct_answer": final_correct if "FILL_IN_BLANK" not in str(final_correct) else None,
             "explanation": final_explanation
         }
         if attachment_b64: q_data["image"] = attachment_b64
@@ -1350,7 +1376,8 @@ if st.session_state.view_mode == "detail" and st.session_state.mistake_mode == "
                 
                 # Apply current sort order
                 s_opt = st.session_state.get("quiz_sort_order", "📅 添加时间(最新)")
-                if s_opt == "📅 添加时间(最新)": _active = _active[::-1]
+                # Database returns DESC (newest first), so "最早" needs reverse
+                if s_opt == "📅 添加时间(最早)": _active = _active[::-1]
                 elif s_opt == "🔥 陌生度(高→低)": _active.sort(key=lambda x: x.get("familiarity_score", 0), reverse=True)
                 elif s_opt == "✨ 陌生度(低→高)": _active.sort(key=lambda x: x.get("familiarity_score", 0))
                 
@@ -1358,7 +1385,7 @@ if st.session_state.view_mode == "detail" and st.session_state.mistake_mode == "
                 
                 # Reset quiz states
                 for k in list(st.session_state.keys()):
-                    if k.startswith(("mistake_answered_", "mistake_blanks_", "mq_radio_", "score_res_")):
+                    if k.startswith(("mistake_answered_", "mistake_blanks_", "mq_radio_", "mq_blank_", "mq_multi_selected_", "score_res_")):
                         del st.session_state[k]
                 st.rerun()
         with c_r3_2:
@@ -1444,7 +1471,8 @@ if st.session_state.view_mode == "detail" and st.session_state.mistake_mode == "
             if v_arch: cur_list = [q for q in wrong_questions if q.get("archived", False)]
             else: cur_list = [q for q in wrong_questions if not q.get("archived", False)]
             s_opt = st.session_state.get("quiz_sort_order", "📅 添加时间(最新)")
-            if s_opt == "📅 添加时间(最新)": cur_list = cur_list[::-1]
+            # Database returns DESC (newest first), so "最早" needs reverse
+            if s_opt == "📅 添加时间(最早)": cur_list = cur_list[::-1]
             elif s_opt == "🔥 陌生度(高→低)": cur_list.sort(key=lambda x: x.get("familiarity_score", 0), reverse=True)
             elif s_opt == "✨ 陌生度(低→高)": cur_list.sort(key=lambda x: x.get("familiarity_score", 0))
             
@@ -1580,6 +1608,17 @@ elif st.session_state.view_mode == "detail" and st.session_state.mistake_mode ==
     if not q_text and q.get("image"): q_text = "（请参考图片作答）"
     elif not q_text: q_text = "（题目内容为空）"
     
+    # For MC/multi-select with options, avoid showing options twice
+    # If question text contains numbered options (1. xxx\n2. xxx), extract only the stem
+    question_type = q.get("question_type", "multiple_choice")
+    options = q.get("options", [])
+    if question_type in ["multiple_choice", "multi_select"] and options:
+        # Try to split at the first numbered option pattern
+        import re
+        stem_match = re.split(r'\n\s*[1-4A-Da-d][\.、\s]', q_text)
+        if stem_match and len(stem_match[0].strip()) > 0:
+            q_text = stem_match[0].strip()
+    
     st.markdown(f"#### {q_text}")
     
     # State for current question feedback
@@ -1588,7 +1627,7 @@ elif st.session_state.view_mode == "detail" and st.session_state.mistake_mode ==
         st.session_state[answered_key] = False
     
     answered = st.session_state[answered_key]
-    question_type = q.get("question_type", "multiple_choice")
+    # question_type already defined above
     
     # Input Area
     if question_type in ["fill_in_blank", "short_answer"]:
@@ -1651,7 +1690,10 @@ elif st.session_state.view_mode == "detail" and st.session_state.mistake_mode ==
                 st.markdown("**你的答案：**")
                 if num_blanks > 0:
                     cols_ans = st.columns(num_blanks)
-                    for i, val in enumerate(st.session_state[f"mistake_blanks_{item['id']}"]):
+                    # Read from the saved blanks array, which is populated on submit
+                    saved_blanks = st.session_state.get(f"mistake_blanks_{item['id']}", [""] * num_blanks)
+                    for i in range(num_blanks):
+                        val = saved_blanks[i] if i < len(saved_blanks) else ""
                         cols_ans[i].info(f"空格 {i+1}: {val}")
                 else:
                     st.warning("数据异常：该题目没有答案数据")
