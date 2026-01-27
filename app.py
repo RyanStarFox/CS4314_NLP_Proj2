@@ -115,16 +115,14 @@ def settings_dialog():
     # Container for new values
     new_settings = {}
     
-    st.info("""本项目测试了 **Qwen** 和 **智谱清言** 的文本模型、视觉模型、Embedding。
-    请参考 [阿里百炼平台](https://bailian.console.aliyun.com/cn-beijing/doc?tab=doc#/doc) 和 [智谱清言开放平台](https://docs.bigmodel.cn/cn/guide/start/quick-start) 配置。
-    *阿里百炼平台为新注册用户提供免费 Token，智谱清言有永久免费模型。*""")
+    st.info("""本项目测试了 **Qwen** 和 **智谱清言** 的文本模型、Embedding、视觉模型。\n请参考 [阿里百炼平台](https://bailian.console.aliyun.com/cn-beijing/doc?tab=doc#/doc) 和 [智谱清言开放平台](https://docs.bigmodel.cn/cn/guide/start/quick-start) 配置。\n*阿里百炼平台为新注册用户提供免费 Token，智谱清言有永久免费模型。*\n经测试，图像模型只要能够正常OCR就可以获得良好体验，文本模型建议使用高性能模型，不建议免费模型""")
     
     # Level 1 Tabs
     t_api, t_rag, t_txt = st.tabs(["🤖 AI模型配置", "🔍 检索与RAG配置", "📄 文本处理配置"])
     
     with t_api:
         # Level 2 Tabs for API
-        st_llm, st_emb, st_vl = st.tabs(["文本模型", "向量模型", "多模态模型"])
+        st_llm, st_emb, st_vl = st.tabs(["文本模型", "向量模型（Embedding）", "多模态模型"])
         
         with st_llm:
             st.markdown("#### 文本生成模型 (LLM)")

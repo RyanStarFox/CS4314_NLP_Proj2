@@ -225,13 +225,23 @@ def process_question_async(rid, book_name, q_c, q_o, q_correct, q_e, ocr_b64, at
             if start != -1 and end != -1:
                 s = s[start:end+1]
             
-            # CRITICAL FIX 1: Replace real newlines with \n escape
-            # JSON strings cannot contain real newlines
-            # CRITICAL FIX: Escape ALL invalid JSON escape sequences
-            # Valid JSON escapes: \n, \t, \r, \b, \f, \\, \/, \"
-            # LaTeX uses many others like \(, \), \{, \}, \alpha (backslashes followed by non-escape chars)
-            # We must escape the backslash for those.
-            s = re.sub(r'\\(?![/\\bfnrtu"])', r'\\\\', s)
+            # CRITICAL FIX: Handle LaTeX backslashes properly
+            # Strategy:
+            # 1. First, escape ALL backslashes (\ -> \\)
+            # 2. Then restore ONLY the intentional newlines (\n in explanation)
+            # This prevents \times -> \t (tab), \theta -> \t, etc.
+            
+            # Step 1: Escape ALL backslashes
+            s = re.sub(r'\([a-zA-Z])', r'\\\1', s)
+            
+            # Step 2: Restore newlines (for explanation field line breaks)
+            # The model outputs literal \n for line breaks in explanation
+            # After step 1, these become \\n, we need to restore to \n
+            s = s.replace('\\\\n', '\\n')
+            
+            # Note: We do NOT restore \t, \r etc as they're rarely intentional
+            # LaTeX commands like \times, \theta stay as \\times, \\theta
+            
             return s
 
         # ========== STAGE 1: PURE OCR ==========
@@ -295,7 +305,6 @@ def process_question_async(rid, book_name, q_c, q_o, q_correct, q_e, ocr_b64, at
 - fill_in_blank: 填空题（有空格待填）
 - short_answer: 解答题/计算题
 - proof: 证明题/推导题
-- mixed: 混合题型（包含多个小题，且涉及不同类型）
 
 输出格式：{"type": "...", "confidence": "high/medium/low"}
 """
@@ -399,25 +408,6 @@ Output:
     "answers": [],
     "options": [],
     "correct_answer": "False"
-}
-""",
-            "mixed": r"""
-**当前任务**：处理【混合题型】。
-此类题目通常包含填空、选择、计算等多个部分，或者结构复杂。
-请生成完整的题目文本和详细解析。
-`answers` 字段请填 `["见解析"]`。
-
-【示例】
-Type: mixed
-Text: (1)填空：... (2)计算：...
-Output:
-{
-    "summary": "综合练习",
-    "question": "完整题目...",
-    "explanation": "详解...",
-    "answers": ["见解析"],
-    "options": [],
-    "correct_answer": ""
 }
 """,
             "fill_in_blank": r"""
@@ -663,49 +653,22 @@ Output:
             return mapping.get(s, s.upper())
 
         # Answer Logic
-        # Answer Logic
-        final_correct = ""
-        ans_list = []
-        
-        # Determine final_correct string based on user input or AI output
         if q_correct:
-            raw_correct = q_correct
-        else:
-            raw_correct = res_2.get("correct_answer", "")
-            
-        # Special handling for fill_in_blank encoding
-        if detected_type == "fill_in_blank":
-             if q_correct:
-                 # If user provided answer manually, split by any newline type (hard or soft)
-                 # splitlines() handles \n, \r, \r\n, \u2028 (Line Separator), etc.
-                 cleaned = q_correct.strip()
-                 # Check if there are multiple lines
-                 lines = [line.strip() for line in cleaned.splitlines() if line.strip()]
-                 
-                 if len(lines) > 1:
-                     ans_list = lines
-                 else:
-                     ans_list = [cleaned]
-             else:
-                 # Use AI generated answers array
-                 ans_list = res_2.get("answers", [])
-                 # Fallback to correct_answer string if answers array is empty
-                 if not ans_list and raw_correct:
-                     ans_list = [raw_correct]
-             
-             # Encode into final_options/correct_answer using the protocol
-             if ans_list:
-                 final_options = "FILL_IN_BLANK:" + json.dumps(ans_list, ensure_ascii=False)
-                 final_correct = "FILL_IN_BLANK"
-             else:
-                 final_options = ""
-                 final_correct = ""
-        
-        else:
-            # For other types (MC, boolean, short_answer, etc.)
-            final_correct = raw_correct
+            final_correct = q_correct
+            # Normalize User MC Answer if single letter or digit
             if detected_type in ["multiple_choice", "boolean"]:
+                  # Use standard mapper
                   final_correct = _map_to_letter(final_correct)
+        else:
+            final_correct = res_2.get("correct_answer", "")
+            if detected_type == "fill_in_blank":
+                ans_list = res_2.get("answers", [])
+                if ans_list:
+                    final_options = "FILL_IN_BLANK:" + json.dumps(ans_list, ensure_ascii=False)
+                    final_correct = "FILL_IN_BLANK"
+                else:
+                    final_options = "FILL_IN_BLANK:" + json.dumps([final_correct], ensure_ascii=False)
+                    final_correct = "FILL_IN_BLANK"
         
         # Multi-select normalization fallback
         if detected_type == "multi_select" and q_correct:
@@ -868,8 +831,7 @@ def mistake_detail_dialog(item, book_name, is_archived):
             "判断题": "boolean",
             "填空题": "fill_in_blank",
             "解答题": "short_answer",
-            "证明题": "proof",
-            "混合题": "mixed"
+            "证明题": "proof"
         }
         curr_type_idx = list(type_opts.values()).index(current_type) if current_type in type_opts.values() else 0
         new_type_display = st.radio("题目类型", list(type_opts.keys()), index=curr_type_idx, horizontal=True, label_visibility="collapsed")
@@ -1051,7 +1013,7 @@ def add_mistake_dialog(selected_book):
     # Row 2: Answer, Explanation
     c5, c6 = st.columns([1, 5])
     with c5:
-        q_a = st.text_area("正确答案", placeholder="例如：A\n填空/解答题：\n1. 多个空/小问请换行\n2. 多解（任选一）用 | 分隔", height=200)
+        q_a = st.text_area("正确答案", placeholder="例如：A\n填空用逗号分隔", height=200)
     with c6:
         q_e = st.text_area("解析 (可选)", placeholder="由 AI 自动生成...", height=200)
     
@@ -1656,9 +1618,9 @@ elif st.session_state.view_mode == "detail" and st.session_state.mistake_mode ==
                 else:
                     st.warning("数据异常：该题目没有答案数据")
     
-    elif question_type in ["proof", "mixed"]:
+    elif question_type == "proof":
         if not answered:
-            st.info("📝 证明题/简答题/混合题请先自行在草稿本完成，完成后点击下方按钮查看标准答案并自评。")
+            st.info("📝 证明题/简答题请先自行在草稿本完成，完成后点击下方按钮查看标准答案并自评。")
             if st.button("完成练习，查看解析", type="primary", use_container_width=True):
                 st.session_state[answered_key] = "eval" # Intermediate state
                 st.rerun()
@@ -1706,24 +1668,11 @@ elif st.session_state.view_mode == "detail" and st.session_state.mistake_mode ==
                     s = s.strip()
                     # Check for "A. " pattern
                     if len(s) >= 2 and s[0].isalpha() and s[1] in [".", "、", " "]: return s[0].upper()
-                    # Check for "1. " pattern
-                    if len(s) >= 2 and s[0].isdigit() and s[1] in [".", "、", " "]: 
-                        try:
-                            # Map 1->A, 2->B
-                            return chr(65 + int(s[0]) - 1)
-                        except: pass
+                    # Check for "1. " pattern (if mapped options) but options usually A-D normalized
                     return s
                 
                 # User's selected keys (e.g. ['A', 'C'])
-                user_keys = set()
-                for idx, o_text in enumerate(options):
-                   if o_text in selected_opts:
-                       extracted = extract_option_key(o_text)
-                       # If extracted key is not a single letter (meaning no prefix found), map index to letter
-                       if len(extracted) > 1:
-                           user_keys.add(chr(65 + idx)) # 0->A, 1->B
-                       else:
-                           user_keys.add(extracted)
+                user_keys = set(extract_option_key(o) for o in selected_opts)
                 
                 # Correct keys
                 # correct_answer is like "A, C" or "A C"
@@ -1737,33 +1686,8 @@ elif st.session_state.view_mode == "detail" and st.session_state.mistake_mode ==
                 st.session_state[f"score_res_{item['id']}"] = (is_correct, old_score, new_score, archived)
                 st.rerun()
         else:
-            sel_vals = st.session_state.get(f"mq_multi_selected_{item['id']}", [])
-            
-            # Convert raw selections to A, B, C... keys
-            display_keys = []
-            options = q.get("options", [])
-            
-            # Helper logic copy (since extract_option_key is local above)
-            for idx, o in enumerate(options):
-                if o in sel_vals:
-                     key = str(o)
-                     s = o.strip()
-                     # Try extract A. prefix
-                     if len(s) >= 2 and s[0].isalpha() and s[1] in [".", "、", " "]: 
-                         key = s[0].upper()
-                     # Try extract 1. prefix
-                     elif len(s) >= 2 and s[0].isdigit() and s[1] in [".", "、", " "]:
-                         try: key = chr(65 + int(s[0]) - 1)
-                         except: key = s
-                     
-                     # If key is still full text (length > 1), map by index
-                     if len(key) > 1:
-                         key = chr(65 + idx)
-                         
-                     display_keys.append(key)
-            
-            final_display = ", ".join(display_keys) if display_keys else "未选择"
-            st.info(f"**你的答案：** {final_display}")
+            sel_vals = st.session_state.get(f"mq_multi_{item['id']}", [])
+            st.info(f"**你的答案：** {', '.join(sel_vals) if sel_vals else '未选择'}")
 
     else: # multiple_choice or boolean
         options = q.get("options", [])
