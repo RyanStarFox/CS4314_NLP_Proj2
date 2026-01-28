@@ -1,18 +1,38 @@
-import streamlit as st
+import streamlit as st # type: ignore
 import time
 import json
+import base64
+import streamlit.components.v1 as components
 from rag_agent import RAGAgent
+import ui_components
 from kb_manager import KBManager
 from question_db import QuestionDB
 
-st.set_page_config(page_title="做题练习", page_icon="logo.webp", layout="wide")
+# Inject JS for keyboard shortcut (Cmd/Ctrl + ,)
+components.html("""
+<script>
+document.addEventListener('keydown', function(e) {
+    if ((e.metaKey || e.ctrlKey) && (e.key === ',' || e.keyCode === 188)) {
+        e.preventDefault();
+        window.top.postMessage({type: 'open-settings'}, '*');
+    }
+});
+</script>
+""", height=0, width=0)
 
+st.set_page_config(page_title="做题练习", page_icon="logo.png", layout="wide")
+
+# 1. Inject sidebar CSS separately (No f-string conflict)
+st.markdown(ui_components.get_sidebar_css(), unsafe_allow_html=True)
+
+# 2. Inject Page-Specific CSS using standard string (No braces escaping needed)
 st.markdown("""
 <style>
-    .block-container { padding-top: 4rem; }
-    /* 选项按钮样式 - 使其看起来像可点击的卡片，整个选项文本可点击 */
-    /* 通过 key 选择器定位选项按钮（key 包含 "q" 和 "_opt_"） */
-    div[data-testid="stButton"] > button[kind="secondary"] {
+    .block-container { padding-top: 2rem; }
+    img { image-rendering: -webkit-optimize-contrast; }
+    
+    /* 选项按钮样式 - 仅限主内容区域 */
+    [data-testid="stMain"] div[data-testid="stButton"] > button[kind="secondary"] {
         width: 100%;
         border-radius: 10px;
         padding: 15px 20px;
@@ -30,25 +50,14 @@ st.markdown("""
         color: var(--text-color, #000);
         transition: all 0.2s;
     }
-    div[data-testid="stButton"] > button[kind="secondary"]:hover {
+    [data-testid="stMain"] div[data-testid="stButton"] > button[kind="secondary"]:hover {
         background-color: var(--background-color, #f5f5f5);
         border-color: var(--primary-color, #1f77b4);
         transform: translateY(-2px);
         box-shadow: 0 2px 8px rgba(0,0,0,0.1);
     }
-    /* 暗黑模式下的选项按钮 */
-    @media (prefers-color-scheme: dark) {
-        div[data-testid="stButton"] > button[kind="secondary"] {
-            background-color: var(--secondary-background-color, #262730);
-            border-color: rgba(255, 255, 255, 0.2);
-            color: var(--text-color, #fff);
-        }
-        div[data-testid="stButton"] > button[kind="secondary"]:hover {
-            background-color: var(--background-color, #0e1117);
-            border-color: var(--primary-color, #1f77b4);
-        }
-    }
     
+    /* Option Card */
     .option-card {
         padding: 15px;
         border: 1px solid rgba(128, 128, 128, 0.3);
@@ -58,52 +67,59 @@ st.markdown("""
         background-color: var(--secondary-background-color, #f0f0f0);
         color: var(--text-color, #000);
     }
-    /* 暗黑模式下的选项卡片 */
+    
+    /* Dark Mode Adaptations */
     @media (prefers-color-scheme: dark) {
+        [data-testid="stMain"] div[data-testid="stButton"] > button[kind="secondary"] {
+            background-color: var(--secondary-background-color, #262730);
+            border-color: rgba(255, 255, 255, 0.2);
+            color: var(--text-color, #fff);
+        }
+        [data-testid="stMain"] div[data-testid="stButton"] > button[kind="secondary"]:hover {
+            background-color: var(--background-color, #0e1117);
+            border-color: var(--primary-color, #1f77b4);
+        }
         .option-card {
             background-color: var(--secondary-background-color, #262730);
             border-color: rgba(255, 255, 255, 0.2);
             color: var(--text-color, #fff);
         }
-    }
-    .correct {
-        background-color: rgba(40, 167, 69, 0.15) !important;
-        border-color: rgba(40, 167, 69, 0.5) !important;
-    }
-    /* 暗黑模式下的正确选项 */
-    @media (prefers-color-scheme: dark) {
         .correct {
             background-color: rgba(40, 167, 69, 0.25) !important;
             border-color: rgba(40, 167, 69, 0.6) !important;
         }
+        .incorrect {
+            background-color: rgba(220, 53, 69, 0.25) !important;
+            border-color: rgba(220, 53, 69, 0.6) !important;
+        }
+        
+        [data-testid="stMain"] div[data-testid="stButton"] > button[kind="primary"] {
+            color: var(--text-color, #fff);
+            background-color: var(--primary-color, #ff4b4b);
+        }
+        [data-testid="stMain"] div[data-testid="stButton"] > button[kind="primary"]:hover {
+            background-color: var(--primary-color, #ff6b6b);
+        }
+    }
+    
+    /* Light Mode Status Colors */
+    .correct {
+        background-color: rgba(40, 167, 69, 0.15) !important;
+        border-color: rgba(40, 167, 69, 0.5) !important;
     }
     .incorrect {
         background-color: rgba(220, 53, 69, 0.15) !important;
         border-color: rgba(220, 53, 69, 0.5) !important;
     }
-    /* 暗黑模式下的错误选项 */
-    @media (prefers-color-scheme: dark) {
-        .incorrect {
-            background-color: rgba(220, 53, 69, 0.25) !important;
-            border-color: rgba(220, 53, 69, 0.6) !important;
-        }
-    }
     
-    /* 结果页面的按钮适配暗黑模式 */
-    div[data-testid="stButton"] > button[kind="primary"] {
+    [data-testid="stMain"] div[data-testid="stButton"] > button[kind="primary"] {
         color: var(--text-color, #fff);
-    }
-    @media (prefers-color-scheme: dark) {
-        div[data-testid="stButton"] > button[kind="primary"] {
-            color: var(--text-color, #fff);
-            background-color: var(--primary-color, #ff4b4b);
-        }
-        div[data-testid="stButton"] > button[kind="primary"]:hover {
-            background-color: var(--primary-color, #ff6b6b);
-        }
     }
 </style>
 """, unsafe_allow_html=True)
+
+# sidebar
+ui_components.render_sidebar()
 
 st.title("📝 智能做题练习") # Title stays same
 

@@ -20,24 +20,25 @@ from config import (
 import hashlib
 from rank_bm25 import BM25Okapi
 import jieba
+from chromadb.utils import embedding_functions
+from datetime import datetime
+from settings_utils import get_user_data_dir
 
 class VectorStore:
 
-    def __init__(
-        self,
-        db_path: str = VECTOR_DB_PATH,
-        collection_name: str = COLLECTION_NAME,
-    ):
-        self.db_path = db_path
+    def __init__(self, collection_name="knowledge_base"):
         self.collection_name = collection_name
+        
+        # Use user data directory for persistence (Cross-platform)
+        data_dir = get_user_data_dir()
+        self.persist_directory = os.path.join(data_dir, "chroma_db")
 
         # 初始化OpenAI客户端
         self.client = get_openai_client(api_key=EMBEDDING_API_KEY, base_url=EMBEDDING_API_BASE)
 
         # 初始化ChromaDB
-        os.makedirs(db_path, exist_ok=True)
+        os.makedirs(self.db_path, exist_ok=True)
         self.chroma_client = chromadb.PersistentClient(
-            path=db_path, settings=Settings(anonymized_telemetry=False)
         )
 
         # 安全处理 Collection Name (支持中文等特殊字符)

@@ -35,3 +35,26 @@ vector_db/
 *.backup
 *.bak
 *.log
+
+# Desktop App Build Artifacts
+desktop-app/node_modules/
+desktop-app/dist/
+desktop-app/build/
+desktop-app/python-dist/
+desktop-app/src-tauri/target/
+desktop-app/*.spec
+!desktop-app/python-backend.spec
+
+# PyInstaller
+*.spec.bak
+build/
+dist/
+
+# Large binary files
+*.dmg
+*.exe
+*.msi
+*.app
+*.AppImage
+*.deb
+*.rpm

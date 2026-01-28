@@ -1,58 +1,81 @@
 import os
+import sys
+import platform
+from pathlib import Path
 
-def load_settings_from_env(env_path=".env"):
-    """直接从 .env 文件读取设置，不依赖 os.environ"""
+def get_user_data_dir():
+    """Get the user data directory for the application."""
+    app_name = "Vulpis"
+    
+    if platform.system() == "Windows":
+        base_path = os.environ.get("APPDATA", os.path.expanduser("~\\AppData\\Roaming"))
+    elif platform.system() == "Darwin":
+        base_path = os.path.expanduser("~/Library/Application Support")
+    else:
+        base_path = os.path.expanduser("~/.local/share")
+        
+    data_dir = os.path.join(base_path, app_name)
+    os.makedirs(data_dir, exist_ok=True)
+    return data_dir
+
+def load_settings_from_env():
+    """Load settings from .env file in the user data directory."""
+    data_dir = get_user_data_dir()
+    env_path = os.path.join(data_dir, '.env')
+    
     settings = {}
     if os.path.exists(env_path):
-        with open(env_path, "r", encoding="utf-8") as f:
+        with open(env_path, 'r', encoding='utf-8') as f:
             for line in f:
                 line = line.strip()
-                if not line or line.startswith("#"): continue
-                if "=" in line:
-                    key, val = line.split("=", 1)
-                    # Remove inline comments
-                    val = val.split("#", 1)[0].strip()
-                    settings[key.strip()] = val
+                if line and not line.startswith('#'):
+                    key, value = line.split('=', 1)
+                    settings[key.strip()] = value.strip()
+    else:
+        # Create empty .env if not exists
+        try:
+            with open(env_path, 'w', encoding='utf-8') as f:
+                f.write("# Vulpis Configuration\n")
+        except Exception as e:
+            print(f"Warning: Could not create .env file at {env_path}: {e}")
+            
     return settings
 
-def save_settings_to_env(settings, env_path=".env"):
-    """保存设置到 .env 文件，尽量保留注释"""
+def save_settings_to_env(settings):
+    """Save settings to .env file in the user data directory."""
+    data_dir = get_user_data_dir()
+    env_path = os.path.join(data_dir, '.env')
+    
+    # Read existing file to preserve comments
     lines = []
     if os.path.exists(env_path):
-        with open(env_path, "r", encoding="utf-8") as f:
+        with open(env_path, 'r', encoding='utf-8') as f:
             lines = f.readlines()
-    
+            
+    # Update lines
     new_lines = []
-    processed_keys = set()
+    updated_keys = set()
     
-    # Update existing keys
     for line in lines:
         stripped = line.strip()
-        if not stripped or stripped.startswith("#"):
-            new_lines.append(line)
-            continue
-            
-        if "=" in stripped:
-            key = stripped.split("=", 1)[0].strip()
-            if key in settings:
-                new_lines.append(f"{key}={settings[key]}\n")
-                processed_keys.add(key)
-            else:
-                new_lines.append(line) # keep existing unrelated keys
+        if stripped and not stripped.startswith('#'):
+            try:
+                parts = stripped.split('=', 1)
+                key = parts[0].strip()
+                if key in settings:
+                    new_lines.append(f"{key}={settings[key]}\n")
+                    updated_keys.add(key)
+                else:
+                    new_lines.append(line)
+            except IndexError:
+                 new_lines.append(line)
         else:
             new_lines.append(line)
             
-    # Append new keys if any
-    # Prepare categories if file is empty or new sections needed?
-    # For simplicity, just append.
-    
-    # Check if we need to add a newline before appending
-    if new_lines and not new_lines[-1].endswith("\n"):
-        new_lines.append("\n")
+    # Append new keys
+    for key, value in settings.items():
+        if key not in updated_keys:
+             new_lines.append(f"{key}={value}\n")
 
-    for key, val in settings.items():
-        if key not in processed_keys:
-            new_lines.append(f"{key}={val}\n")
-            
     with open(env_path, "w", encoding="utf-8") as f:
         f.writelines(new_lines)

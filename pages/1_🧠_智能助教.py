@@ -2,23 +2,44 @@ import streamlit as st
 import time
 import base64
 import os
-from rag_agent import RAGAgent
+import streamlit.components.v1 as components
 from kb_manager import KBManager
+import ui_components
 
-st.set_page_config(page_title="智能助教", page_icon="logo.webp", layout="wide")
+# Inject JS for keyboard shortcut (Cmd/Ctrl + ,)
+components.html("""
+<script>
+document.addEventListener('keydown', function(e) {
+    if ((e.metaKey || e.ctrlKey) && (e.key === ',' || e.keyCode === 188)) {
+        e.preventDefault();
+        window.top.postMessage({type: 'open-settings'}, '*');
+    }
+}, true);
+</script>
+""", height=0, width=0)
 
-st.markdown("""
+st.set_page_config(page_title="智能助教", page_icon="logo.png", layout="wide")
+
+st.markdown(f"""
 <style>
-    .block-container { padding-top: 2rem; }
-    .stChatMessage { 
+    .block-container {{ padding-top: 2rem; }}
+    img {{ image-rendering: -webkit-optimize-contrast; }}
+    
+    .stChatMessage {{ 
         padding: 1.2rem; 
         border-radius: 16px; 
         margin-bottom: 1rem; 
         box-shadow: 0 4px 12px rgba(0,0,0,0.05); 
         border: 1px solid rgba(128, 128, 128, 0.1);
-    }
+    }}
+    
+    /* Sidebar Styles from ui_components */
+    {ui_components.get_sidebar_css()}
 </style>
 """, unsafe_allow_html=True)
+
+# sidebar
+ui_components.render_sidebar()
 
 st.title("🧠 智能助教")
 

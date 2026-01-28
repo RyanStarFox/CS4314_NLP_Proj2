@@ -9,34 +9,36 @@ load_dotenv()
 # API配置 (文本生成模型)
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 OPENAI_API_BASE = os.getenv("OPENAI_API_BASE", "")
-MODEL_NAME = os.getenv("MODEL_NAME", "gpt-4o")
+MODEL_NAME = os.getenv("MODEL_NAME", "")
 
 # Embedding 模型API配置
 # 如果未独立设置，默认回退到使用 OPENAI_API_KEY/BASE
 EMBEDDING_API_KEY = os.getenv("EMBEDDING_API_KEY", OPENAI_API_KEY)
 EMBEDDING_API_BASE = os.getenv("EMBEDDING_API_BASE", OPENAI_API_BASE)
-OPENAI_EMBEDDING_MODEL = os.getenv("OPENAI_EMBEDDING_MODEL", "text-embedding-3-small")
+OPENAI_EMBEDDING_MODEL = os.getenv("OPENAI_EMBEDDING_MODEL", "")
 
 # 多模态模型(VL) API配置
 # 如果未独立设置，默认回退到使用 OPENAI_API_KEY/BASE
 VL_API_KEY = os.getenv("VL_API_KEY", OPENAI_API_KEY)
 VL_API_BASE = os.getenv("VL_API_BASE", OPENAI_API_BASE)
-VL_MODEL_NAME = os.getenv("VL_MODEL_NAME", "gpt-4o")
+VL_MODEL_NAME = os.getenv("VL_MODEL_NAME", "")
 
 # 课件图像理解配置
 ENABLE_IMAGE_CAPTIONING = os.getenv("ENABLE_IMAGE_CAPTIONING", "False").lower() == "true"
-IMAGE_CAPTION_MODEL = os.getenv("IMAGE_CAPTION_MODEL", "gpt-4o") 
+IMAGE_CAPTION_MODEL = os.getenv("IMAGE_CAPTION_MODEL", "") 
 # Captioning 也可以有独立的 key，目前复用 VL_API_KEY
 
 
 # 数据目录配置
-# 使用绝对路径，确保指向项目根目录下的 data 文件夹
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DATA_DIR = os.path.join(BASE_DIR, "data")
-# DATA_DIR = os.getenv("DATA_DIR", "./data")
+from settings_utils import get_user_data_dir
+
+# Use user data directory for all persistent data
+user_data_dir = get_user_data_dir()
+DATA_DIR = os.path.join(user_data_dir, "data")
 
 # 向量数据库配置
-VECTOR_DB_PATH = os.getenv("VECTOR_DB_PATH", "./vector_db")
+# Force vector DB to live in user data dir as well
+VECTOR_DB_PATH = os.path.join(user_data_dir, "vector_db")
 COLLECTION_NAME = os.getenv("COLLECTION_NAME", "")
 
 # 混合检索配置 (Hybrid Search)

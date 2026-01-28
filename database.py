@@ -10,8 +10,9 @@ import json
 import sys
 import threading
 from contextlib import contextmanager
+from settings_utils import get_user_data_dir
 
-DB_FILE = "data/user_progress.db"
+DB_FILE = "user_progress.db"
 
 # Thread-local storage for connections (one connection per thread)
 _thread_local = threading.local()
@@ -19,8 +20,8 @@ _thread_local = threading.local()
 
 def get_db_path():
     """Get the absolute path to the database file."""
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    return os.path.join(base_dir, DB_FILE)
+    data_dir = get_user_data_dir()
+    return os.path.join(data_dir, DB_FILE)
 
 
 def _get_thread_connection():

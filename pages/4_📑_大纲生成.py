@@ -1,18 +1,40 @@
 import streamlit as st
 import time
-from rag_agent import RAGAgent
-from kb_manager import KBManager
 import base64
+import os
+import streamlit.components.v1 as components
+from kb_manager import KBManager
+import ui_components
+from rag_agent import RAGAgent
 
 from question_db import QuestionDB # Import DB
 
-st.set_page_config(page_title="大纲生成", page_icon="logo.webp", layout="wide")
+# Inject JS for keyboard shortcut (Cmd/Ctrl + ,)
+components.html("""
+<script>
+document.addEventListener('keydown', function(e) {
+    if ((e.metaKey || e.ctrlKey) && (e.key === ',' || e.keyCode === 188)) {
+        e.preventDefault();
+        window.top.postMessage({type: 'open-settings'}, '*');
+    }
+}, true);
+</script>
+""", height=0, width=0)
 
-st.markdown("""
+st.set_page_config(page_title="智能大纲生成", page_icon="logo.png", layout="wide")
+
+st.markdown(f"""
 <style>
-    .block-container { padding-top: 2rem; }
+    .block-container {{ padding-top: 2rem; }}
+    img {{ image-rendering: -webkit-optimize-contrast; }}
+    
+    /* Sidebar Styles from ui_components */
+    {ui_components.get_sidebar_css()}
 </style>
 """, unsafe_allow_html=True)
+
+# sidebar
+ui_components.render_sidebar()
 
 st.title("📑 智能大纲生成")
 

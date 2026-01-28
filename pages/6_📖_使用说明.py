@@ -1,6 +1,35 @@
 import streamlit as st
+import base64
+import os
+import streamlit.components.v1 as components
+import ui_components
 
-st.set_page_config(page_title="使用说明", page_icon="logo.webp", layout="wide")
+# Inject JS for keyboard shortcut (Cmd/Ctrl + ,)
+components.html("""
+<script>
+document.addEventListener('keydown', function(e) {
+    if ((e.metaKey || e.ctrlKey) && (e.key === ',' || e.keyCode === 188)) {
+        e.preventDefault();
+        window.top.postMessage({type: 'open-settings'}, '*');
+    }
+}, true);
+</script>
+""", height=0, width=0)
+
+st.set_page_config(page_title="使用说明", page_icon="logo.png", layout="wide")
+
+st.markdown(f"""
+<style>
+    .block-container {{ padding-top: 2rem; }}
+    img {{ image-rendering: -webkit-optimize-contrast; }}
+    
+    /* Sidebar Styles from ui_components */
+    {ui_components.get_sidebar_css()}
+</style>
+""", unsafe_allow_html=True)
+
+# sidebar
+ui_components.render_sidebar()
 
 # Custom CSS for card styling
 # Initialize navigation state
@@ -11,6 +40,7 @@ if 'help_section' not in st.session_state:
 st.markdown("""
 <style>
     .block-container { padding-top: 2rem; }
+    img { image-rendering: -webkit-optimize-contrast; }
     
     .instruction-card {
         background-color: var(--secondary-background-color);
@@ -77,9 +107,8 @@ if st.session_state.help_section is None:
             padding-bottom: 0rem;
         }
         
-        /* 隐藏 Streamlit 自带页脚和 Header */
+        /* 仅隐藏 Streamlit 页脚, 保留 header 以便侧边栏按钮正常工作 */
         footer {display: none;}
-        header {visibility: hidden;}
     </style>
     """, unsafe_allow_html=True)
 

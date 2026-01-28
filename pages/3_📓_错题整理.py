@@ -3,11 +3,40 @@ import time
 import json
 import threading
 import base64
+import streamlit.components.v1 as components
 from question_db import QuestionDB
 from openai import OpenAI
 from config import OPENAI_API_KEY, OPENAI_API_BASE, VL_MODEL_NAME, MODEL_NAME
+import ui_components
 
-st.set_page_config(page_title="错题整理", page_icon="logo.webp", layout="wide")
+# Inject JS for keyboard shortcut (Cmd/Ctrl + ,)
+components.html("""
+<script>
+document.addEventListener('keydown', function(e) {
+    if ((e.metaKey || e.ctrlKey) && (e.key === ',' || e.keyCode === 188)) {
+        e.preventDefault();
+        window.top.postMessage({type: 'open-settings'}, '*');
+    }
+}, true);
+</script>
+""", height=0, width=0)
+
+st.set_page_config(page_title="错题整理", page_icon="logo.png", layout="wide")
+
+# 1. Inject sidebar CSS separately (No f-string conflict)
+st.markdown(ui_components.get_sidebar_css(), unsafe_allow_html=True)
+
+st.markdown("""
+<style>
+    .block-container { padding-top: 2rem; }
+    img { image-rendering: -webkit-optimize-contrast; }
+</style>
+""", unsafe_allow_html=True)
+
+# sidebar
+ui_components.render_sidebar()
+
+st.title("📓 错题整理")
 
 # Page Context Management: Reset dialogs when entering from another page
 if st.session_state.get("last_page") != "mistakes":
@@ -18,9 +47,10 @@ if st.session_state.get("last_page") != "mistakes":
 # 自定义 CSS 样式
 st.markdown("""
 <style>
-    .block-container { padding-top: 4rem; }
-    /* 全局按钮样式优化 */
-    .stButton button {
+    .block-container { padding-top: 2rem; }
+    img { image-rendering: -webkit-optimize-contrast; }
+    /* 全局按钮样式优化 - 仅限主内容区域 */
+    [data-testid="stMain"] .stButton button {
         border-radius: 8px !important;
         border: 1px solid #e8e8e8;
         transition: all 0.3s ease;
@@ -30,7 +60,7 @@ st.markdown("""
         min-height: 0px !important;
     }
     
-    .stButton button:hover {
+    [data-testid="stMain"] .stButton button:hover {
         border-color: #FF4B4B !important;
         background-color: #FFF5F5 !important;
         transform: translateY(-1px);
@@ -1357,8 +1387,16 @@ if st.session_state.view_mode == "detail" and st.session_state.mistake_mode == "
         st.info(f"🎉 太棒了！错题本「{selected_book}」是空的。可以手动添加错题或去【做题练习】！")
         if archived_count > 0:
             st.info(f"📦 该错题本有 {archived_count} 道已归档的题目")
-        if st.button("前往做题练习", type="primary", key="go_quiz_empty_main"):
-            st.switch_page("pages/2_📝_做题练习.py")
+        
+        c_empty_1, c_empty_2 = st.columns(2)
+        with c_empty_1:
+            if st.button("➕ 添加错题", type="primary", use_container_width=True, key="add_mistake_empty"):
+                st.session_state.active_dialog_id = None 
+                st.session_state.active_dialog_type = "add"
+                st.rerun()
+        with c_empty_2:
+            if st.button("➡️ 前往做题练习", use_container_width=True, key="go_quiz_empty_main"):
+                st.switch_page("pages/2_📝_做题练习.py")
         st.markdown("---")
 
     else:
