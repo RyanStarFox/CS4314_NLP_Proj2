@@ -1,6 +1,6 @@
 [package]
 name = "vulpis"
-version = "0.1.0"
+version = "0.0.1"
 description = "智能课程助教系统"
 authors = ["CS4314 Project Team"]
 license = "MIT"
