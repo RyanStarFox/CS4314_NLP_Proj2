@@ -121,7 +121,7 @@ jobs:
           else
              python -m pip install --upgrade pip
              python -m pip install streamlit langchain langchain-community langchain-openai chromadb pandas numpy python-dotenv watchfiles pyinstaller beautifulsoup4 pypdf openai tiktoken
-             python -c "import os; os.system('pip install -r requirements.txt') if os.path.exists('requirements.txt') else pass"
+             python -c "import os; os.system('pip install -r requirements.txt') if os.path.exists('requirements.txt') else print('Skipping requirements.txt')"
           fi
         shell: bash
 
