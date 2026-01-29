@@ -58,3 +58,6 @@ dist/
 *.AppImage
 *.deb
 *.rpm
+
+# Agent System
+.agent/

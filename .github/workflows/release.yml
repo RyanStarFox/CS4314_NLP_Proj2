@@ -1,0 +1,81 @@
+name: Release App
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  create-release:
+    runs-on: ubuntu-latest
+    outputs:
+      release_id: ${{ steps.create-release.outputs.id }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create Release
+        id: create-release
+        uses: softprops/action-gh-release@v1
+        with:
+          draft: true
+          prerelease: false
+          generate_release_notes: true
+
+  build-tauri:
+    needs: create-release
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: "macos-latest"
+            os: macos-latest
+            args: "--target aarch64-apple-darwin"
+          - platform: "windows-latest"
+            os: windows-latest
+            args: ""
+
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin' || '' }}
+
+      - name: Install Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Python dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Build Python Backend (MacOS)
+        if: matrix.os == 'macos-latest'
+        run: |
+          pyinstaller --clean --noconfirm --distpath desktop-app/python-dist --workpath desktop-app/build --specpath desktop-app app.py
+          chmod +x desktop-app/python-dist/app/app
+
+      - name: Build Python Backend (Windows)
+        if: matrix.os == 'windows-latest'
+        run: |
+          pyinstaller --clean --noconfirm --distpath desktop-app/python-dist --workpath desktop-app/build --specpath desktop-app app.py
+
+      - name: Build Tauri App
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: "./desktop-app"
+          tagName: ${{ github.ref_name }}
+          releaseId: ${{ needs.create-release.outputs.release_id }}
+          args: ${{ matrix.args }}
