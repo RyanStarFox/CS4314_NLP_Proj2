@@ -140,11 +140,10 @@ jobs:
       # --- BACKEND BUILD ---
       - name: Build Python Backend
         run: |
-          # Use absolute path invocation for Windows to bypass PATH issues in Git Bash
           if [ "${{ runner.os }}" == "Windows" ]; then
-             # Windows: Invoke via explicit path to Scripts/pyinstaller.exe
-             # GitHub Actions sets $pythonLocation env var
-             "$pythonLocation/Scripts/pyinstaller.exe" --clean --noconfirm --distpath desktop-app/python-dist --workpath desktop-app/build --specpath desktop-app app.py
+             # Windows: Use the explicit python executable from setup-python to avoid Git Bash PATH issues
+             echo "Using Python at: $pythonLocation"
+             "$pythonLocation/python" -m PyInstaller --clean --noconfirm --distpath desktop-app/python-dist --workpath desktop-app/build --specpath desktop-app app.py
           else
              # Mac/Linux: Standard invocation
              pyinstaller --clean --noconfirm --distpath desktop-app/python-dist --workpath desktop-app/build --specpath desktop-app app.py
