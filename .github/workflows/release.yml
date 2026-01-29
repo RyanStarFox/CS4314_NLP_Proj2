@@ -56,13 +56,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # --- VERSION INJECTION ---
+      # --- VERSION INJECTION LOGIC ---
       - name: Update Version from Tag (Mac/Reference)
         if: runner.os != 'Windows'
         run: |
           VERSION=${GITHUB_REF_NAME#v}
           echo "Syncing version to $VERSION"
+          # Only replace "version": "..." lines that look like the main package version
           sed -i '' "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" desktop-app/src-tauri/tauri.conf.json
+          # Only replace version = "..." at the start of the line (package version), ignore deps
           sed -i '' "s/^version = \".*\"/version = \"$VERSION\"/" desktop-app/src-tauri/Cargo.toml
         shell: bash
 
@@ -71,10 +73,24 @@ jobs:
         run: |
           $Version = $env:GITHUB_REF_NAME.TrimStart('v')
           Write-Host "Syncing version to $Version"
+          
           $jsonPath = "desktop-app/src-tauri/tauri.conf.json"
           $tomlPath = "desktop-app/src-tauri/Cargo.toml"
+          
+          # JSON: specific key replacement
           (Get-Content $jsonPath) -replace '"version": ".*?"', "`"version`": `"$Version`"" | Set-Content $jsonPath
-          (Get-Content $tomlPath) -replace 'version = ".*?"', "version = `"$Version`"" | Set-Content $tomlPath
+          
+          # TOML: SAFE replacement. Only replace 'version = "..."' if it's the package version (start of line)
+          # We manually iterate to ensure we don't accidentally replace dependency versions like serde = { version = "1" }
+          $content = Get-Content $tomlPath
+          $newContent = $content | ForEach-Object { 
+              if ($_ -match '^version\s*=\s*".*"') { 
+                  'version = "' + $Version + '"' 
+              } else { 
+                  $_ 
+              } 
+          }
+          $newContent | Set-Content $tomlPath
         shell: powershell
 
       - name: Install Node.js
@@ -116,7 +132,7 @@ jobs:
       # --- BACKEND BUILD ---
       - name: Build Python Backend
         run: |
-          pyinstaller --clean --noconfirm --distpath desktop-app/python-dist --workpath desktop-app/build --specpath desktop-app app.py
+          python -m PyInstaller --clean --noconfirm --distpath desktop-app/python-dist --workpath desktop-app/build --specpath desktop-app app.py
           if [ "${{ runner.os }}" != "Windows" ]; then
             chmod +x desktop-app/python-dist/app/app
           fi
