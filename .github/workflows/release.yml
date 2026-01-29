@@ -126,16 +126,25 @@ jobs:
         shell: bash
 
       # --- BACKEND BUILD ---
+      # --- BACKEND BUILD ---
       - name: Build Python Backend
         run: |
           if [ "${{ runner.os }}" == "Windows" ]; then
-             # Windows: Use the explicit python executable from setup-python to avoid Git Bash PATH issues
+             # Windows: Use explicit python, AND rename output to 'python-backend'
              echo "Using Python at: $pythonLocation"
-             "$pythonLocation/python" -m PyInstaller --clean --noconfirm --distpath desktop-app/python-dist --workpath desktop-app/build --specpath desktop-app app.py
+             "$pythonLocation/python" -m PyInstaller --clean --noconfirm --name python-backend --distpath desktop-app/python-dist --workpath desktop-app/build --specpath desktop-app app.py
+             
+             # Copy necessary data folders if they exist
+             if [ -d "vector_db" ]; then cp -r vector_db desktop-app/python-dist/python-backend/; fi
+             if [ -d "data" ]; then cp -r data desktop-app/python-dist/python-backend/; fi
           else
-             # Mac/Linux: Standard invocation
-             pyinstaller --clean --noconfirm --distpath desktop-app/python-dist --workpath desktop-app/build --specpath desktop-app app.py
-             chmod +x desktop-app/python-dist/app/app
+             # Mac/Linux: Standard invocation with rename
+             pyinstaller --clean --noconfirm --name python-backend --distpath desktop-app/python-dist --workpath desktop-app/build --specpath desktop-app app.py
+             chmod +x desktop-app/python-dist/python-backend/python-backend
+             
+             # Copy necessary data folders
+             if [ -d "vector_db" ]; then cp -r vector_db desktop-app/python-dist/python-backend/; fi
+             if [ -d "data" ]; then cp -r data desktop-app/python-dist/python-backend/; fi
           fi
         shell: bash
 
