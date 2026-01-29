@@ -107,13 +107,11 @@ jobs:
           architecture: 'x86' 
 
       # FIX: Create dependencies manually since requirements.txt might be missing or unreadable
+      # Using Python one-liner to check file existence is cross-platform safe
       - name: Install Python dependencies
         run: |
-          # Install core dependencies manually to avoid 'file not found' error
           pip install streamlit langchain langchain-community langchain-openai chromadb pandas numpy python-dotenv watchfiles pyinstaller beautifulsoup4 pypdf openai tiktoken
-          
-          # Try to install optional/local deps but don't fail if missing
-          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          python -c "import os; os.system('pip install -r requirements.txt') if os.path.exists('requirements.txt') else print('No requirements.txt found, skipping')"
 
       # --- BACKEND BUILD ---
       - name: Build Python Backend
