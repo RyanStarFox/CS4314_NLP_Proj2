@@ -3,7 +3,7 @@ name: Release App
 on:
   push:
     tags:
-      - "v*"
+      - 'v*'
 
 jobs:
   create-release:
@@ -28,16 +28,54 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - platform: "macos-latest"
+          # 1. Apple Silicon Mac (M1/M2/M3)
+          - platform: 'macos-silicon'
             os: macos-latest
-            args: "--target aarch64-apple-darwin"
-          - platform: "windows-latest"
+            target: 'aarch64-apple-darwin'
+            tauri_args: '--target aarch64-apple-darwin'
+
+          # 2. Intel Mac
+          - platform: 'macos-intel'
+            os: macos-13 
+            target: 'x86_64-apple-darwin'
+            tauri_args: '--target x86_64-apple-darwin'
+
+          # 3. Windows x64 (Standard)
+          - platform: 'windows-x64'
             os: windows-latest
-            args: ""
+            target: '' 
+            tauri_args: ''
+
+          # 4. Windows x86 (32-bit Legacy)
+          - platform: 'windows-x86'
+            os: windows-latest
+            target: 'i686-pc-windows-msvc'
+            tauri_args: '--target i686-pc-windows-msvc'
 
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+
+      # --- VERSION INJECTION LOGIC ---
+      - name: Update Version from Tag
+        run: |
+          # Strip 'v' prefix from tag (e.g., v0.0.3 -> 0.0.3)
+          VERSION=${GITHUB_REF_NAME#v}
+          echo "Syncing version to $VERSION"
+          
+          if [ "${{ runner.os }}" == "Windows" ]; then
+             # Windows PowerShell script to update JSON/TOML
+             $jsonPath = "desktop-app/src-tauri/tauri.conf.json"
+             $tomlPath = "desktop-app/src-tauri/Cargo.toml"
+             
+             (Get-Content $jsonPath) -replace '"version": ".*?"', "`"version`": `"$VERSION`"" | Set-Content $jsonPath
+             (Get-Content $tomlPath) -replace 'version = ".*?"', "version = `"$VERSION`"" | Set-Content $tomlPath
+          else
+             # Bash / Sed for Mac
+             sed -i '' "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" desktop-app/src-tauri/tauri.conf.json
+             sed -i '' "s/^version = \".*\"/version = \"$VERSION\"/" desktop-app/src-tauri/Cargo.toml
+          fi
+        shell: bash
 
       - name: Install Node.js
         uses: actions/setup-node@v4
@@ -47,29 +85,38 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin' || '' }}
+          targets: ${{ matrix.target }}
 
-      - name: Install Python
+      # --- PYTHON SETUP ---
+      - name: Install Python (General)
+        if: matrix.platform != 'windows-x86'
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: '3.11' 
+
+      - name: Install Python (32-bit for Windows x86)
+        if: matrix.platform == 'windows-x86'
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11' 
+          architecture: 'x86' # Force 32-bit Python
 
       - name: Install Python dependencies
         run: |
           pip install -r requirements.txt
           pip install pyinstaller
 
-      - name: Build Python Backend (MacOS)
-        if: matrix.os == 'macos-latest'
+      # --- BACKEND BUILD ---
+      - name: Build Python Backend
         run: |
           pyinstaller --clean --noconfirm --distpath desktop-app/python-dist --workpath desktop-app/build --specpath desktop-app app.py
-          chmod +x desktop-app/python-dist/app/app
+          # Make executable on Mac
+          if [ "${{ runner.os }}" != "Windows" ]; then
+            chmod +x desktop-app/python-dist/app/app
+          fi
+        shell: bash
 
-      - name: Build Python Backend (Windows)
-        if: matrix.os == 'windows-latest'
-        run: |
-          pyinstaller --clean --noconfirm --distpath desktop-app/python-dist --workpath desktop-app/build --specpath desktop-app app.py
-
+      # --- FRONTEND BUILD ---
       - name: Build Tauri App
         uses: tauri-apps/tauri-action@v0
         env:
@@ -78,4 +125,4 @@ jobs:
           projectPath: "./desktop-app"
           tagName: ${{ github.ref_name }}
           releaseId: ${{ needs.create-release.outputs.release_id }}
-          args: ${{ matrix.args }}
+          args: ${{ matrix.tauri_args }}
