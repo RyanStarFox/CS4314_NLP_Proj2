@@ -120,7 +120,13 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11' 
-          architecture: 'x86' 
+          architecture: 'x86' # Force 32-bit Python
+
+      # FIX: Explicitly add Scripts to PATH on Windows to find pyinstaller.exe
+      - name: Add Python Scripts to PATH (Windows)
+        if: runner.os == 'Windows'
+        run: echo "$env:pythonLocation\Scripts" | Out-File -FilePath $env:GITHUB_PATH -Append
+        shell: powershell
 
       # FIX: Create dependencies manually since requirements.txt might be missing or unreadable
       # Using Python one-liner to check file existence is cross-platform safe
@@ -134,7 +140,8 @@ jobs:
       # --- BACKEND BUILD ---
       - name: Build Python Backend
         run: |
-          python -m PyInstaller --clean --noconfirm --distpath desktop-app/python-dist --workpath desktop-app/build --specpath desktop-app app.py
+          # Use explicit pyinstaller command now that we fixed PATH
+          pyinstaller --clean --noconfirm --distpath desktop-app/python-dist --workpath desktop-app/build --specpath desktop-app app.py
           if [ "${{ runner.os }}" != "Windows" ]; then
             chmod +x desktop-app/python-dist/app/app
           fi
