@@ -26,9 +26,12 @@ class QuestionDB:
         row = cursor.fetchone()
         if row:
             return row['id']
+        
         # Create the book
+        print(f"Auto-creating mistake book: {book_name}")
+        # Explicitly set is_archived to 0 to avoid potential schema issues
         cursor.execute(
-            'INSERT INTO mistake_books (name, created_at) VALUES (?, ?)',
+            'INSERT INTO mistake_books (name, created_at, is_archived) VALUES (?, ?, 0)',
             (book_name, time.time())
         )
         return cursor.lastrowid
@@ -116,7 +119,7 @@ class QuestionDB:
             cursor = conn.cursor()
             try:
                 cursor.execute(
-                    'INSERT INTO mistake_books (name, created_at) VALUES (?, ?)',
+                    'INSERT INTO mistake_books (name, created_at, is_archived) VALUES (?, ?, 0)',
                     (book_name, time.time())
                 )
                 return True

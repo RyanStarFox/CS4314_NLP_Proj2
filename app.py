@@ -179,7 +179,7 @@ st.markdown("""
     .warning-text {
         font-size: 1rem;
         line-height: 1.5;
-        color: rgba(250, 250, 250, 0.9);
+        color: var(--text-color);
     }
     .warning-text strong {
         color: #ffbd45;
@@ -230,30 +230,34 @@ with col_right:
 st.markdown("---")
 
 # --- System Check ---
+# --- System Check ---
 import config
-if not os.path.exists(".env"):
+import settings_utils
+
+# Get .env path from settings_utils (Source of Truth)
+user_data_dir = settings_utils.get_user_data_dir()
+env_path = os.path.join(user_data_dir, '.env')
+
+# Auto-create .env if missing (User Request)
+if not os.path.exists(env_path):
+    try:
+        with open(env_path, 'w', encoding='utf-8') as f:
+            f.write("# Vulpis Configuration\n")
+        # Reload config to apply the clean slate if needed, though mostly symbolic here as it's empty
+        import importlib
+        importlib.reload(config)
+    except Exception as e:
+        st.error(f"无法创建配置文件: {e}")
+
+# Check for API Keys (now that .env definitely exists)
+if not all([config.OPENAI_API_KEY, config.MODEL_NAME, config.OPENAI_EMBEDDING_MODEL]):
     st.markdown("""
     <div class="custom-warning-box">
         <div class="warning-content">
             <div class="warning-icon">⚠️</div>
             <div class="warning-text">
-                <strong>Vulpis 尚未就绪</strong>：检测到根目录缺少 .env 配置文件。<br>
-                请点击右侧按钮或展开左侧侧栏，打开系统设置面板进行初始化配置。
-            </div>
-        </div>
-        <a href="?open_settings=true" target="_self" class="warning-btn">
-            🚀 点击此处设置
-        </a>
-    </div>
-    """, unsafe_allow_html=True)
-            
-elif not all([config.OPENAI_API_KEY, config.MODEL_NAME, config.OPENAI_EMBEDDING_MODEL]):
-    st.markdown("""
-    <div class="custom-warning-box">
-        <div class="warning-content">
-            <div class="warning-icon">⚠️</div>
-            <div class="warning-text">
-                <strong>核心配置不完整</strong>：检测到 API Key 或部分关键模型尚未配置。<br>
+                <strong>核心配置不完整</strong>：检测到 API Key 或部分关键模型尚未配置。<br> 
+                (配置文件路径: <code style="font-size: 0.8em;">{env_path}</code>)<br>
                 请点击右侧按钮或展开左侧侧栏，打开系统设置面板。
             </div>
         </div>
@@ -261,7 +265,7 @@ elif not all([config.OPENAI_API_KEY, config.MODEL_NAME, config.OPENAI_EMBEDDING_
             🔧 点击此处设置
         </a>
     </div>
-    """, unsafe_allow_html=True)
+    """.format(env_path=env_path), unsafe_allow_html=True)
 
 # --- Navigation Cards (Clickable Links) ---
 # We use HTML <a> tags wrapping the cards to make them clickable.

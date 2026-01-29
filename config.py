@@ -3,8 +3,20 @@ import httpx
 from openai import OpenAI
 from dotenv import load_dotenv
 
+# 数据目录配置
+from settings_utils import get_user_data_dir
+
+# Use user data directory for all persistent data
+user_data_dir = get_user_data_dir()
+DATA_DIR = os.path.join(user_data_dir, "data")
+env_path = os.path.join(user_data_dir, '.env')
+
 # 加载 .env 文件中的环境变量
-load_dotenv()
+# 优先从用户数据目录加载，如果没有则尝试加载当前目录作为回退
+if os.path.exists(env_path):
+    load_dotenv(dotenv_path=env_path)
+else:
+    load_dotenv() # Fallback to CWD
 
 # API配置 (文本生成模型)
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
@@ -54,7 +66,10 @@ MAX_TOKENS = int(os.getenv("MAX_TOKENS", "4096"))
 
 # RAG配置
 TOP_K = int(os.getenv("TOP_K", "6"))
-EXERCISE_TOP_K = int(os.getenv("EXERCISE_TOP_K", "30")) # Pool size for quiz generation
+EXERCISE_TOP_K = int(os.getenv("EXERCISE_TOP_K", "100")) # Pool size for random quiz
+EXERCISE_TOP_K_TOPIC = int(os.getenv("EXERCISE_TOP_K_TOPIC", "30")) # Pool size when topic is specified
+QUIZ_CONTEXT_LENGTH = int(os.getenv("QUIZ_CONTEXT_LENGTH", "2000"))
+PANDOC_PATH = os.getenv("PANDOC_PATH", "") # Optional custom path for pandoc
 MEMORY_WINDOW_SIZE = int(os.getenv("MEMORY_WINDOW_SIZE", "10"))
 
 

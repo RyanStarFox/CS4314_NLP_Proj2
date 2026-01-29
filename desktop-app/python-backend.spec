@@ -92,7 +92,11 @@ hiddenimports += [
     'tiktoken_ext',
     'tiktoken_ext.openai_public',
     'jieba',
+    'jieba',
     'rank_bm25',
+    'fitz',
+    'pymupdf',
+    'task_manager',
     # Data processing
     'numpy',
     'pandas',

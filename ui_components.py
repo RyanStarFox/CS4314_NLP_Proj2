@@ -19,7 +19,7 @@ def settings_dialog():
     st.info("""本项目测试了 **Qwen** 和 **智谱清言** 的文本模型、Embedding、视觉模型。\n请参考 [阿里百炼平台](https://bailian.console.aliyun.com/cn-beijing/doc?tab=doc#/doc) 和 [智谱清言开放平台](https://docs.bigmodel.cn/cn/guide/start/quick-start) 配置。\n*阿里百炼平台为新注册用户提供免费 Token，智谱清言有永久免费模型。*\n经测试，图像模型只要能够正常OCR就可以获得良好体验，文本模型建议使用高性能模型，不建议免费模型""")
     
     # Level 1 Tabs
-    t_api, t_rag, t_txt = st.tabs(["🤖 AI模型配置", "🔍 检索与RAG配置", "📄 文本处理配置"])
+    t_api, t_rag, t_txt, t_tool = st.tabs(["🤖 AI模型配置", "🔍 检索与RAG配置", "📄 文本处理配置", "🛠️ 工具配置"])
     
     with t_api:
         # Level 2 Tabs for API
@@ -108,20 +108,64 @@ def settings_dialog():
         st.subheader("混合检索 & RAG 参数")
         enable_hybrid = get_val("ENABLE_HYBRID_SEARCH", "True").lower() == "true"
         new_settings["ENABLE_HYBRID_SEARCH"] = str(st.checkbox("开启混合检索 (向量+关键词)", value=enable_hybrid, key="s_hybrid"))
-        new_settings["HYBRID_SEARCH_ALPHA"] = st.text_input("混合检索权重 (Alpha 0~1)", value=get_val("HYBRID_SEARCH_ALPHA", "0.5"), key="s_hybrid_alpha")
+        new_settings["HYBRID_SEARCH_ALPHA"] = st.text_input("混合检索权重 (Alpha 0~1，默认0.5)", value=get_val("HYBRID_SEARCH_ALPHA", "0.5"), key="s_hybrid_alpha")
         st.divider()
         st.markdown("##### RAG 参数")
-        new_settings["TOP_K"] = st.text_input("单次检索文档数 (TOP_K)", value=get_val("TOP_K", "6"), key="s_top_k")
-        new_settings["EXERCISE_TOP_K"] = st.text_input("出题候选池大小", value=get_val("EXERCISE_TOP_K", "30"), key="s_ex_top_k")
-        new_settings["MEMORY_WINDOW_SIZE"] = st.text_input("对话记忆轮数", value=get_val("MEMORY_WINDOW_SIZE", "10"), key="s_mem_win")
+        new_settings["TOP_K"] = st.text_input("单次检索文档数 (TOP_K，默认6)", value=get_val("TOP_K", "6"), key="s_top_k")
+        new_settings["EXERCISE_TOP_K"] = st.text_input("随机出题候选池 (默认100)", value=get_val("EXERCISE_TOP_K", "100"), help="未指定主题时，从多少个相关文档中采样。", key="s_ex_top_k")
+        new_settings["EXERCISE_TOP_K_TOPIC"] = st.text_input("指定主题候选池 (默认30)", value=get_val("EXERCISE_TOP_K_TOPIC", "30"), help="指定主题时，从多少个最相关的文档中采样（越小越聚焦）。", key="s_ex_top_k_topic")
+        new_settings["QUIZ_CONTEXT_LENGTH"] = st.text_input("出题上下文长度 (默认2000)", value=get_val("QUIZ_CONTEXT_LENGTH", "2000"), help="截取多少字符发给 AI 用于出题。太短可能导致信息不足，太长可能导致Token消耗过大。", key="s_quiz_ctx_len")
+        new_settings["MEMORY_WINDOW_SIZE"] = st.text_input("对话记忆轮数（默认10）", value=get_val("MEMORY_WINDOW_SIZE", "10"), key="s_mem_win")
 
     with t_txt:
         st.subheader("知识库切分参数")
-        new_settings["CHUNK_SIZE"] = st.text_input("切分块大小 (Chunk Size)", value=get_val("CHUNK_SIZE", "1000"), key="s_chunk_size")
-        new_settings["CHUNK_OVERLAP"] = st.text_input("重叠大小 (Overlap)", value=get_val("CHUNK_OVERLAP", "200"), key="s_chunk_lap")
-        new_settings["MAX_TOKENS"] = st.text_input("模型最大上下文 (Max Tokens)", value=get_val("MAX_TOKENS", "4096"), key="s_max_tok")
-        new_settings["SIZE_ERROR"] = st.text_input("长度容错 (Size Error)", value=get_val("SIZE_ERROR", "100"), key="s_size_err")
-        new_settings["OVERLAP_ERROR"] = st.text_input("重叠容错 (Overlap Error)", value=get_val("OVERLAP_ERROR", "20"), key="s_lap_err")
+        new_settings["CHUNK_SIZE"] = st.text_input("切分块大小 (默认1000)", value=get_val("CHUNK_SIZE", "1000"), key="s_chunk_size")
+        new_settings["CHUNK_OVERLAP"] = st.text_input("重叠大小 (默认200)", value=get_val("CHUNK_OVERLAP", "200"), key="s_chunk_lap")
+        new_settings["MAX_TOKENS"] = st.text_input("模型最大上下文 (默认4096)", value=get_val("MAX_TOKENS", "4096"), key="s_max_tok")
+        new_settings["SIZE_ERROR"] = st.text_input("长度容错 (默认100)", value=get_val("SIZE_ERROR", "100"), key="s_size_err")
+        new_settings["OVERLAP_ERROR"] = st.text_input("重叠容错 (默认20)", value=get_val("OVERLAP_ERROR", "20"), key="s_lap_err")
+    
+    with t_tool:
+        st.subheader("Pandoc 配置")
+        st.caption("PDF生成依赖 Pandoc。通常情况下系统会自动找到，如果报错，请在此手动指定路径。")
+        st.markdown("**Pandoc 安装指南**: [pandoc.org/installing.html](https://pandoc.org/installing.html) (如无法打开请手动复制链接)")
+        
+        new_settings["PANDOC_PATH"] = st.text_input(
+            "Pandoc 可执行文件路径", 
+            value=get_val("PANDOC_PATH", ""), 
+            placeholder="例如: /usr/local/bin/pandoc 或 C:\\Program Files\\Pandoc\\pandoc.exe",
+            help="留空则使用系统默认 PATH 查找",
+            key="s_pandoc_path"
+        )
+        
+        if st.button("🧪 测试 Pandoc 路径", key="btn_test_pandoc"):
+            import subprocess
+            import os
+            
+            # Update PATH for the test process to match export logic
+            common_paths = [
+                "/opt/homebrew/bin", 
+                "/usr/local/bin",    
+                "/Library/TeX/texbin" 
+            ]
+            for p in common_paths:
+                if os.path.exists(p) and p not in os.environ["PATH"]:
+                    os.environ["PATH"] += os.pathsep + p
+
+            path_to_test = new_settings["PANDOC_PATH"] or "pandoc"
+            try:
+                # Construct command based on whether it is a full path or command name
+                cmd = [path_to_test, "--version"]
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
+                if result.returncode == 0:
+                    version_line = result.stdout.split('\n')[0]
+                    st.success(f"✅ Pandoc 可用！\n\n版本信息: {version_line}\n\n实际路径: {path_to_test if path_to_test != 'pandoc' else '系统 PATH'}")
+                else:
+                    st.error(f"❌ 执行失败: 返回码 {result.returncode}\n\n错误输出: {result.stderr}")
+            except FileNotFoundError:
+                st.error(f"❌ 未找到命令: {path_to_test}\n请检查路径是否正确，或是否已安装 Pandoc。")
+            except Exception as e:
+                st.error(f"❌ 测试出错: {e}")
         
     st.divider()
     if st.button("💾 保存并应用配置", type="primary", use_container_width=True):
@@ -170,6 +214,8 @@ def render_sidebar():
         }
         </style>
     """, unsafe_allow_html=True)
+    
+    # Background Task Monitor removed
 
     # Merge triggers for settings dialog to avoid duplicate calls or state confusion
     should_open = False

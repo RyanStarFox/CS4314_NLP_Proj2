@@ -5,6 +5,7 @@ import os
 import streamlit.components.v1 as components
 from kb_manager import KBManager
 import ui_components
+from rag_agent import RAGAgent
 
 # Inject JS for keyboard shortcut (Cmd/Ctrl + ,)
 components.html("""
@@ -103,6 +104,11 @@ with st.sidebar:
         st.rerun()
 
 # Chat History
+if "messages" not in st.session_state:
+    st.session_state.messages = [
+        {"role": "assistant", "content": f"👋 你好！我是基于 **{selected_kb}** 的智能助教。有什么我可以帮你的吗？"}
+    ]
+
 for message in st.session_state.messages:
     with st.chat_message(message["role"], avatar="🧑‍🎓" if message["role"] == "user" else "🤖"):
         if "image_base64" in message and message["image_base64"]:
@@ -202,6 +208,8 @@ if st.session_state.messages and st.session_state.messages[-1]["role"] == "user"
                 
                 # 逐字显示
                 for chunk in stream:
+                    if not chunk.choices:
+                        continue
                     if chunk.choices[0].delta.content is not None:
                         full_response += chunk.choices[0].delta.content
                         message_placeholder.markdown(full_response + "▌")

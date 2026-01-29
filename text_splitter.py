@@ -143,29 +143,25 @@ class TextSplitter:
             content = doc.get("content", "")
             filetype = doc.get("filetype", "")
 
-            if filetype in [".pdf", ".pptx"]:
-                chunk_data = {
-                    "content": content,
-                    "filename": doc.get("filename", "unknown"),
-                    "filepath": doc.get("filepath", ""),
-                    "filetype": filetype,
-                    "page_number": doc.get("page_number", 0),
-                    "chunk_id": 0,
-                    "images": doc.get("images", []),
-                }
-                chunks_with_metadata.append(chunk_data)
-
-            elif filetype in [".docx", ".txt"]:
+            if filetype in [".pdf", ".pptx", ".docx", ".txt"]:
+                # 统一使用 split_text 进行切分，确保不超过 token 限制
+                # 对于 PDF/PPTX，如果单页内容超过 chunk_size，也会被切分
+                # 同时保留页码信息
+                page_num = doc.get("page_number", 0)
                 chunks = self.split_text(content)
+                
                 for i, chunk in enumerate(chunks):
+                    if not chunk.strip():
+                        continue
+                        
                     chunk_data = {
                         "content": chunk,
                         "filename": doc.get("filename", "unknown"),
                         "filepath": doc.get("filepath", ""),
                         "filetype": filetype,
-                        "page_number": 0,
+                        "page_number": page_num,
                         "chunk_id": i,
-                        "images": [],
+                        "images": doc.get("images", []),
                     }
                     chunks_with_metadata.append(chunk_data)
 

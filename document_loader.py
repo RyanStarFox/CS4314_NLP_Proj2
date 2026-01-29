@@ -58,32 +58,46 @@ class DocumentLoader:
     def load_pdf(self, file_path: str) -> List[Dict]:
         """加载PDF文件，按页返回内容 (包含图片理解)"""
         pages = []
-        # 使用 PyMuPDF (fitz) 因为它提取图片更方便
-        import fitz 
-        doc = fitz.open(file_path)
-        
-        for page_num, page in enumerate(doc, start=1):
-            text = page.get_text()
+        try:
+            # 尝试使用 PyMuPDF (fitz) 因为它提取图片更方便
+            import fitz 
+            doc = fitz.open(file_path)
             
-            # 提取并处理图片
-            image_descriptions = ""
-            if ENABLE_IMAGE_CAPTIONING:
-                image_list = page.get_images(full=True)
-                for img_index, img in enumerate(image_list):
-                    xref = img[0]
-                    base_image = doc.extract_image(xref)
-                    image_bytes = base_image["image"]
-                    
-                    # 忽略过小的图标或装饰性图片 (例如小于 5KB)
-                    if len(image_bytes) < 5 * 1024:
-                        continue
+            for page_num, page in enumerate(doc, start=1):
+                text = page.get_text()
+                
+                # 提取并处理图片
+                image_descriptions = ""
+                if ENABLE_IMAGE_CAPTIONING:
+                    image_list = page.get_images(full=True)
+                    for img_index, img in enumerate(image_list):
+                        xref = img[0]
+                        base_image = doc.extract_image(xref)
+                        image_bytes = base_image["image"]
                         
-                    desc = self._generate_image_caption(image_bytes, source_info=f"第{page_num}页 图片{img_index+1}")
-                    image_descriptions += desc
+                        # 忽略过小的图标或装饰性图片 (例如小于 5KB)
+                        if len(image_bytes) < 5 * 1024:
+                            continue
+                            
+                        desc = self._generate_image_caption(image_bytes, source_info=f"第{page_num}页 图片{img_index+1}")
+                        image_descriptions += desc
 
-            formatted_text = f"--- 第 {page_num} 页 ---\n{text}\n{image_descriptions}\n"
-            pages.append({"text": formatted_text})
-        
+                formatted_text = f"--- 第 {page_num} 页 ---\n{text}\n{image_descriptions}\n"
+                pages.append({"text": formatted_text})
+                
+        except ImportError:
+            print("Warning: PyMuPDF (fitz) module not found. Falling back to PyPDF2. Image context will be unavailable.")
+            # Fallback to PyPDF2
+            from PyPDF2 import PdfReader
+            reader = PdfReader(file_path)
+            for page_num, page in enumerate(reader.pages, start=1):
+                text = page.extract_text() or ""
+                formatted_text = f"--- 第 {page_num} 页 ---\n{text}\n"
+                pages.append({"text": formatted_text})
+                
+        except Exception as e:
+            print(f"Error loading PDF: {e}")
+            
         return pages
 
     def load_pptx(self, file_path: str) -> List[Dict]:

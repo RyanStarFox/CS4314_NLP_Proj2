@@ -4,6 +4,7 @@ import json
 import base64
 import streamlit.components.v1 as components
 from rag_agent import RAGAgent
+from config import EXERCISE_TOP_K, EXERCISE_TOP_K_TOPIC
 import ui_components
 from kb_manager import KBManager
 from question_db import QuestionDB
@@ -219,13 +220,19 @@ if st.session_state.quiz_state == "config":
             status_text.text(f"正在并行生成 {num_questions} 道{format_name}，请稍候...")
             
             # Use batch generation with randomization and parallelism
+            if topic_refinement:
+                 current_pool_size = EXERCISE_TOP_K_TOPIC
+            else:
+                 current_pool_size = EXERCISE_TOP_K
+                 
             questions = agent.generate_quiz_batch(
                 count=num_questions, 
                 topic=st.session_state.quiz_config["topic"], 
                 q_type=st.session_state.quiz_config["type"],
                 question_format=format_str,
                 num_options=num_options,
-                num_blanks=num_blanks
+                num_blanks=num_blanks,
+                pool_size=current_pool_size
             )
             
             if not questions:
@@ -302,33 +309,32 @@ elif st.session_state.quiz_state == "quizzing":
                     if is_correct:
                         st.session_state.score += 1
                     else:
-                        # Generate Summary for Wrong Question
-                        summary = None
-                        try:
-                            if 'quiz_agent' in st.session_state:
-                                sum_agent = st.session_state.quiz_agent
-                                sum_prompt = f"请用不超过20个字总结以下题目的核心考点或问题大意：\n{question_data.get('question')}"
-                                sum_resp = sum_agent.client.chat.completions.create(
-                                    model=sum_agent.model,
-                                    messages=[{"role": "user", "content": sum_prompt}],
-                                    max_tokens=50,
-                                    temperature=0.3
-                                )
-                                summary = sum_resp.choices[0].message.content.strip()
-                        except Exception as e:
-                            print(f"Summary generation failed: {e}")
-                            summary = question_data.get('question')[:20] + "..."
+                        # Use pre-generated summary if available
+                        summary = question_data.get('summary')
+                        if not summary:
+                            summary = question_data.get('question', '')
+                            if len(summary) > 30:
+                                summary = summary[:30] + "..."
 
                         # Save to Wrong Question DB
                         kb_name = st.session_state.quiz_config["kb"]
-                        question_db.add_result(
-                            kb_name=kb_name,
-                            question_data=question_data,
-                            user_answer=str(user_inputs),
-                            is_correct=False,
-                            summary=summary,
-                            mistake_book=kb_name  # Explicitly use KB name
-                        )
+                        try:
+                            # Debug log
+                            print(f"[Quiz] Saving wrong answer (Fill Blank) to KB '{kb_name}'. Question: {summary}")
+                            
+                            question_db.add_result(
+                                kb_name=kb_name,
+                                question_data=question_data,
+                                user_answer=str(user_inputs),
+                                is_correct=False,
+                                summary=summary,
+                                mistake_book=kb_name  # Explicitly use KB name
+                            )
+                            st.toast("已自动加入错题本", icon="📓")
+                        except Exception as e:
+                            st.error(f"保存错题失败: {e}")
+                            print(f"[Quiz] Error saving result: {e}")
+
                     st.rerun()
                 else:
                     st.warning("请填写所有空格后再提交")
@@ -397,26 +403,21 @@ elif st.session_state.quiz_state == "quizzing":
                     if is_correct:
                         st.session_state.score += 1
                     else:
-                        # Generate Summary for Wrong Question
-                        summary = None
-                        try:
-                            if 'quiz_agent' in st.session_state:
-                                sum_agent = st.session_state.quiz_agent
-                                sum_prompt = f"请用不超过20个字总结以下题目的核心考点或问题大意：\n{question_data.get('question')}"
-                                sum_resp = sum_agent.client.chat.completions.create(
-                                    model=sum_agent.model,
-                                    messages=[{"role": "user", "content": sum_prompt}],
-                                    max_tokens=50,
-                                    temperature=0.3
-                                )
-                                summary = sum_resp.choices[0].message.content.strip()
-                        except Exception as e:
-                            print(f"Summary generation failed: {e}")
-                            summary = question_data.get('question')[:20] + "..."
+                        # Use pre-generated summary if available (best quality + no delay)
+                        summary = question_data.get('summary')
+                        
+                        # Fallback to truncation if AI didn't return summary
+                        if not summary:
+                            summary = question_data.get('question', '')
+                            if len(summary) > 30:
+                                summary = summary[:30] + "..."
 
                         # Save to Wrong Question DB
                         kb_name = st.session_state.quiz_config["kb"]
                         try:
+                            # Debug log
+                            print(f"[Quiz] Saving wrong answer to KB '{kb_name}'. Question: {summary}")
+                            
                             question_db.add_result(
                                 kb_name=kb_name,
                                 question_data=question_data,
@@ -425,9 +426,13 @@ elif st.session_state.quiz_state == "quizzing":
                                 summary=summary,
                                 mistake_book=kb_name  # Explicitly use KB name as mistake book
                             )
+                            # Show toast feedback
+                            st.toast("已自动加入错题本", icon="📓")
+                            print("[Quiz] Saved successfully.")
+                            
                         except Exception as e:
                             st.error(f"保存错题失败: {e}")
-                            print(f"Error saving wrong question: {e}")
+                            print(f"[Quiz] Error saving result: {e}")
                             
                     st.rerun()
         else:

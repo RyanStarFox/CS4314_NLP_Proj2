@@ -37,8 +37,8 @@ class VectorStore:
         self.client = get_openai_client(api_key=EMBEDDING_API_KEY, base_url=EMBEDDING_API_BASE)
 
         # 初始化ChromaDB
-        os.makedirs(self.db_path, exist_ok=True)
         self.chroma_client = chromadb.PersistentClient(
+            path=self.persist_directory
         )
 
         # 安全处理 Collection Name (支持中文等特殊字符)
@@ -97,18 +97,31 @@ class VectorStore:
             self.enable_hybrid = False
 
     def get_embedding(self, text: str) -> List[float]:
-        """获取文本的向量表示
-
-        TODO: 使用OpenAI API获取文本的embedding向量
-
-        """
+        """获取文本的向量表示"""
+        import time
+        
         # 调用OpenAI API获取embedding
-        response = self.client.embeddings.create(
-            model=OPENAI_EMBEDDING_MODEL,
-            input=text
-        )
-        # 返回embedding向量
-        return response.data[0].embedding
+        # 增加重试机制以解决超时问题
+        max_retries = 3
+        current_timeout = 60.0
+        
+        for attempt in range(max_retries):
+            try:
+                response = self.client.embeddings.create(
+                    model=OPENAI_EMBEDDING_MODEL,
+                    input=text,
+                    timeout=current_timeout
+                )
+                return response.data[0].embedding
+            except Exception as e:
+                # 包含超时错误 (APITimeoutError)
+                if attempt < max_retries - 1:
+                    wait_time = 2 * (attempt + 1)
+                    print(f"Embedding API 请求失败 (尝试 {attempt+1}/{max_retries}): {e}。等待 {wait_time} 秒后重试...")
+                    time.sleep(wait_time)
+                else:
+                    # 最后一次尝试也失败，抛出异常
+                    raise e
 
     def add_documents(self, chunks: List[Dict[str, str]]) -> None:
         """添加文档块到向量数据库
@@ -331,3 +344,43 @@ class VectorStore:
         except Exception as e:
             print(f"删除文件文档时出错: {e}")
             return 0
+    def delete_documents_by_filepath(self, filepath: str) -> int:
+        """根据文件绝对路径删除文档块"""
+        try:
+            # Query by filepath metadata
+            all_docs = self.collection.get(
+                where={"filepath": filepath},
+                include=["metadatas"]
+            )
+            if not all_docs["ids"]:
+                return 0
+            
+            doc_ids = all_docs["ids"]
+            self.collection.delete(ids=doc_ids)
+            
+            # Rebuild BM25 if needed
+            if self.enable_hybrid:
+                self._build_bm25_index()
+                
+            return len(doc_ids)
+        except Exception as e:
+            print(f"Error deleting by filepath: {e}")
+            return 0
+
+    def get_existing_files(self) -> set:
+        """获取数据库中已存在的所有文件的路径 (filepath)"""
+        try:
+            # Get all metadatas only
+            all_data = self.collection.get(include=["metadatas"])
+            if not all_data["metadatas"]:
+                return set()
+            
+            # Return set of filepaths
+            return set(
+                m.get("filepath", "") 
+                for m in all_data["metadatas"] 
+                if m.get("filepath")
+            )
+        except Exception as e:
+            print(f"Error getting existing files: {e}")
+            return set()

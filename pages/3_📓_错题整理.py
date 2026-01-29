@@ -1147,8 +1147,6 @@ def add_mistake_dialog(selected_book):
 
 # ========== 错题本列表页面 ==========
 if st.session_state.view_mode == "list":
-    st.title("📓 错题本管理")
-    st.markdown("### 选择一个错题本开始管理错题")
     
     # 获取所有错题本 (with archive status)
     all_books = question_db.list_mistake_books(include_archived=True)

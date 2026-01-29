@@ -11,6 +11,7 @@ from config import (
     MEMORY_WINDOW_SIZE,
     COLLECTION_NAME,
     MAX_TOKENS,
+    QUIZ_CONTEXT_LENGTH,
     get_openai_client,
 )
 from vector_store import VectorStore
@@ -267,7 +268,7 @@ class RAGAgent:
             
         return self.generate_response(query, context, chat_history, image_data=image_data)
 
-    def generate_quiz(self, topic: str, q_type: str, question_format: str = "multiple_choice", num_options: int = 4, num_blanks: int = 3, randomize_context: bool = False) -> Dict[str, Any]:
+    def generate_quiz(self, topic: str, q_type: str, question_format: str = "multiple_choice", num_options: int = 4, num_blanks: int = 3, randomize_context: bool = False, pool_size: int = EXERCISE_TOP_K) -> Dict[str, Any]:
         """生成一道题，返回 JSON 格式
         
         Args:
@@ -277,17 +278,17 @@ class RAGAgent:
             num_options: 选择题选项数量
             num_blanks: 填空题空格数量
             randomize_context: 是否使用随机上下文策略 (Top K*5 中随机选 Top K)
+            pool_size: 候选池大小
         """
         
         # 检索上下文
         if randomize_context:
             # 扩大召回范围，从中随机采样，以增加题目多样性
-            pool_size = EXERCISE_TOP_K 
             context_str, docs = self.retrieve_context(topic, top_k=pool_size)
             
             if docs:
-                # 随机采样 TOP_K 个文档，或者如果文档不够，就全部使用
-                sample_size = min(TOP_K, len(docs))
+                # 随机采样，数量也稍微增加一点，比如 8 个块，确保信息量
+                sample_size = min(8, len(docs))
                 sampled_docs = random.sample(docs, sample_size)
                 
                 # 重新构建 context 字符串
@@ -303,20 +304,21 @@ class RAGAgent:
             prompt = f"""
 你是一个专业的出题老师。请根据以下资料出一道【{q_type}】类型的填空题。
 资料：
-{context[:2000]}
+{context[:QUIZ_CONTEXT_LENGTH]}
 
 要求：
 1. 题目类型：{q_type} (偏概念/偏应用)
 2. 空格数量：{num_blanks}个
 3. 在题目中使用 _____ 表示需要填空的位置
-4. 输出格式：必须是严格的JSON格式，不要包含Markdown代码块标记。
+4. 输出格式：必须是严格的JSON格式，包含 summary 字段。
 
 JSON格式模板：
 {{
     "question_type": "fill_in_blank",
     "question": "题目内容，使用 _____ 表示空格",
     "answers": ["第一个空的答案", "第二个空的答案", ...],
-    "explanation": "解析"
+    "explanation": "解析",
+    "summary": "不超过20个字的题目摘要，用于错题列表展示（例如：Python列表与元组的区别）"
 }}
 
 示例：
@@ -324,19 +326,20 @@ JSON格式模板：
     "question_type": "fill_in_blank",
     "question": "在Python中，_____ 是一种可变的数据类型，而 _____ 是不可变的。",
     "answers": ["列表(list)", "元组(tuple)"],
-    "explanation": "列表是可变的，可以修改元素；元组是不可变的，一旦创建就不能修改。"
+    "explanation": "列表是可变的，可以修改元素；元组是不可变的，一旦创建就不能修改。",
+    "summary": "Python可变与不可变数据类型"
 }}
 """
         else:  # multiple_choice
             prompt = f"""
 你是一个专业的出题老师。请根据以下资料出一道【{q_type}】类型的单选题。
 资料：
-{context[:2000]}
+{context[:QUIZ_CONTEXT_LENGTH]}
 
 要求：
 1. 题目类型：{q_type} (偏概念/偏应用)
 2. 选项数量：{num_options}个
-3. 输出格式：必须是严格的JSON格式，不要包含Markdown代码块标记。
+3. 输出格式：必须是严格的JSON格式，包含 summary 字段。
 
 JSON格式模板：
 {{
@@ -344,7 +347,8 @@ JSON格式模板：
     "question": "题目内容",
     "options": ["选项1", "选项2", ...],
     "correct_answer": "正确选项的内容（必须与options中的某一项完全一致）",
-    "explanation": "解析"
+    "explanation": "解析",
+    "summary": "不超过20个字的题目摘要，用于错题列表展示（例如：错位排列公式的定义）"
 }}
 """
         
@@ -388,7 +392,7 @@ JSON格式模板：
             print(f"出题失败: {e}")
             return {}
 
-    def generate_quiz_batch(self, count: int, topic: str, q_type: str, question_format: str = "multiple_choice", num_options: int = 4, num_blanks: int = 3) -> List[Dict[str, Any]]:
+    def generate_quiz_batch(self, count: int, topic: str, q_type: str, question_format: str = "multiple_choice", num_options: int = 4, num_blanks: int = 3, pool_size: int = EXERCISE_TOP_K) -> List[Dict[str, Any]]:
         """并行生成多道题目"""
         print(f"开始并行生成 {count} 道题目...")
         questions = []
@@ -398,7 +402,7 @@ JSON格式模板：
         with concurrent.futures.ThreadPoolExecutor(max_workers=min(count, 5)) as executor:
             # 提交任务
             futures = [
-                executor.submit(self.generate_quiz, topic, q_type, question_format, num_options, num_blanks, randomize_context=True) 
+                executor.submit(self.generate_quiz, topic, q_type, question_format, num_options, num_blanks, randomize_context=True, pool_size=pool_size) 
                 for _ in range(count)
             ]
             
