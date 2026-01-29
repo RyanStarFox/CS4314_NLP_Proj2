@@ -46,12 +46,6 @@ jobs:
             target: '' 
             tauri_args: ''
 
-          # 4. Windows x86
-          - platform: 'windows-x86'
-            os: windows-latest
-            target: 'i686-pc-windows-msvc'
-            tauri_args: '--target i686-pc-windows-msvc'
-
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -109,33 +103,27 @@ jobs:
           targets: ${{ matrix.target }}
 
       # --- PYTHON SETUP ---
-      - name: Install Python (General)
-        if: matrix.platform != 'windows-x86'
+      - name: Install Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11' 
-
-      - name: Install Python (32-bit for Windows x86)
-        if: matrix.platform == 'windows-x86'
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11' 
-          architecture: 'x86' # Force 32-bit Python
-
-      # FIX: Explicitly add Scripts to PATH on Windows to find pyinstaller.exe
-      - name: Add Python Scripts to PATH (Windows)
-        if: runner.os == 'Windows'
-        run: echo "$env:pythonLocation\Scripts" | Out-File -FilePath $env:GITHUB_PATH -Append
-        shell: powershell
+          python-version: '3.11'
 
       # FIX: Create dependencies manually since requirements.txt might be missing or unreadable
       # Using Python one-liner to check file existence is cross-platform safe
       - name: Install Python dependencies
         run: |
-          # Use python -m pip to ensure we install into the active interpreter
-          python -m pip install --upgrade pip
-          python -m pip install streamlit langchain langchain-community langchain-openai chromadb pandas numpy python-dotenv watchfiles pyinstaller beautifulsoup4 pypdf openai tiktoken
-          python -c "import os; os.system('python -m pip install -r requirements.txt') if os.path.exists('requirements.txt') else print('No requirements.txt found, skipping')"
+          if [ "${{ runner.os }}" == "Windows" ]; then
+             echo "Installing deps using explicit Python: $pythonLocation"
+             "$pythonLocation/python" -m pip install --upgrade pip
+             "$pythonLocation/python" -m pip install streamlit langchain langchain-community langchain-openai chromadb pandas numpy python-dotenv watchfiles pyinstaller beautifulsoup4 pypdf openai tiktoken
+             # Optional requirements.txt check using the explicit python
+             if [ -f requirements.txt ]; then "$pythonLocation/python" -m pip install -r requirements.txt; fi
+          else
+             python -m pip install --upgrade pip
+             python -m pip install streamlit langchain langchain-community langchain-openai chromadb pandas numpy python-dotenv watchfiles pyinstaller beautifulsoup4 pypdf openai tiktoken
+             python -c "import os; os.system('pip install -r requirements.txt') if os.path.exists('requirements.txt') else pass"
+          fi
+        shell: bash
 
       # --- BACKEND BUILD ---
       - name: Build Python Backend
