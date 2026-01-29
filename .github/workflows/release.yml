@@ -126,8 +126,10 @@ jobs:
       # Using Python one-liner to check file existence is cross-platform safe
       - name: Install Python dependencies
         run: |
-          pip install streamlit langchain langchain-community langchain-openai chromadb pandas numpy python-dotenv watchfiles pyinstaller beautifulsoup4 pypdf openai tiktoken
-          python -c "import os; os.system('pip install -r requirements.txt') if os.path.exists('requirements.txt') else print('No requirements.txt found, skipping')"
+          # Use python -m pip to ensure we install into the active interpreter
+          python -m pip install --upgrade pip
+          python -m pip install streamlit langchain langchain-community langchain-openai chromadb pandas numpy python-dotenv watchfiles pyinstaller beautifulsoup4 pypdf openai tiktoken
+          python -c "import os; os.system('python -m pip install -r requirements.txt') if os.path.exists('requirements.txt') else print('No requirements.txt found, skipping')"
 
       # --- BACKEND BUILD ---
       - name: Build Python Backend
