@@ -57,25 +57,27 @@ jobs:
       - uses: actions/checkout@v4
 
       # --- VERSION INJECTION LOGIC ---
-      - name: Update Version from Tag
+      - name: Update Version from Tag (Mac/Reference)
+        if: runner.os != 'Windows'
         run: |
-          # Strip 'v' prefix from tag (e.g., v0.0.3 -> 0.0.3)
           VERSION=${GITHUB_REF_NAME#v}
           echo "Syncing version to $VERSION"
-          
-          if [ "${{ runner.os }}" == "Windows" ]; then
-             # Windows PowerShell script to update JSON/TOML
-             $jsonPath = "desktop-app/src-tauri/tauri.conf.json"
-             $tomlPath = "desktop-app/src-tauri/Cargo.toml"
-             
-             (Get-Content $jsonPath) -replace '"version": ".*?"', "`"version`": `"$VERSION`"" | Set-Content $jsonPath
-             (Get-Content $tomlPath) -replace 'version = ".*?"', "version = `"$VERSION`"" | Set-Content $tomlPath
-          else
-             # Bash / Sed for Mac
-             sed -i '' "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" desktop-app/src-tauri/tauri.conf.json
-             sed -i '' "s/^version = \".*\"/version = \"$VERSION\"/" desktop-app/src-tauri/Cargo.toml
-          fi
+          sed -i '' "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" desktop-app/src-tauri/tauri.conf.json
+          sed -i '' "s/^version = \".*\"/version = \"$VERSION\"/" desktop-app/src-tauri/Cargo.toml
         shell: bash
+
+      - name: Update Version from Tag (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          $Version = $env:GITHUB_REF_NAME.TrimStart('v')
+          Write-Host "Syncing version to $Version"
+          
+          $jsonPath = "desktop-app/src-tauri/tauri.conf.json"
+          $tomlPath = "desktop-app/src-tauri/Cargo.toml"
+          
+          (Get-Content $jsonPath) -replace '"version": ".*?"', "`"version`": `"$Version`"" | Set-Content $jsonPath
+          (Get-Content $tomlPath) -replace 'version = ".*?"', "version = `"$Version`"" | Set-Content $tomlPath
+        shell: powershell
 
       - name: Install Node.js
         uses: actions/setup-node@v4
