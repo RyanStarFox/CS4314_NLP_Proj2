@@ -60,9 +60,6 @@
       "nsis": {
         "installMode": "currentUser",
         "languages": ["SimpChinese", "English"]
-      },
-      "wix": {
-        "language": "zh-CN"
       }
     }
   }
