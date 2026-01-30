@@ -1,5 +1,57 @@
 import streamlit as st
 import os
+import sys
+import socket
+
+def find_free_port():
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(('', 0))
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        return s.getsockname()[1]
+
+# --- PyInstaller/Standalone Application Entry Point ---
+if __name__ == "__main__":
+    # Check if we are running as the "Launcher" process or the "Streamlit" process
+    # We use a custom flag '--run-via-cli' to distinguish.
+    run_via_cli = "--run-via-cli" in sys.argv
+    
+    # If we are the MAIN executable (not inside Streamlit yet) and haven't set the flag:
+    if not run_via_cli:
+        from streamlit.web import cli as stcli
+        
+        # Resolve the current script path properly for PyInstaller
+        if getattr(sys, 'frozen', False):
+            # Point to the bundled source file in the temp directory
+            # We will ensure app.py is added as data
+            script_path = os.path.join(sys._MEIPASS, "app.py")
+        else:
+            script_path = os.path.abspath(__file__)
+            
+        # Find a free port
+        port = find_free_port()
+            
+        print(f"Self-launching Streamlit for: {script_path} on port {port}")
+        # SIGNAL TO TAURI FRONTEND
+        print(f"PYTHON_BACKEND_PORT={port}")
+        sys.stdout.flush()
+        
+        # Construct the streamlit run command
+        sys.argv = [
+            "streamlit", 
+            "run",
+            script_path,
+            "--global.developmentMode=false",
+            f"--server.port={port}",
+            "--server.headless=true",
+            "--server.address=127.0.0.1", # Fix loopback issues on Windows
+            "--server.enableCORS=false",
+            "--server.enableXsrfProtection=false",
+            "--", 
+            "--run-via-cli"
+        ]
+        sys.exit(stcli.main())
+# -----------------------------------------------------
+
 import streamlit.components.v1 as components
 
 # Inject JS for keyboard shortcut (Cmd/Ctrl + ,)
