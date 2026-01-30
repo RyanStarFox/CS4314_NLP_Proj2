@@ -8,6 +8,10 @@ import mimetypes
 mimetypes.add_type('application/javascript', '.js')
 mimetypes.add_type('text/css', '.css')
 
+# Debug MIME
+print(f"DEBUG: JS MIME type is: {mimetypes.guess_type('test.js')[0]}")
+sys.stdout.flush()
+
 def find_free_port():
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.bind(('', 0))

@@ -91,14 +91,44 @@ const logContainer = document.getElementById('log-container');
 const toggleBtn = document.getElementById('toggle-logs');
 
 if (toggleBtn && logContainer) {
+  // FIX: Force toggle button and logs to stay on top of iframe
+  toggleBtn.style.position = 'fixed';
+  toggleBtn.style.bottom = '10px';
+  toggleBtn.style.right = '10px';
+  toggleBtn.style.zIndex = '99999';
+  
+  logContainer.style.zIndex = '99998';
+  // Keep relative/absolute positioning from css or override if needed, 
+  // but z-index is most important.
+  // Assuming css handles position, but let's ensure it floats.
+  // Actually, let's just trust z-index for now to avoid breaking layout, 
+  // but if it was inside a hidden div, it won't show.
+  // Move them to body? No, that's hard in main.js without re-parenting.
+  // If `loading` div is hidden, and they are inside it, they hide.
+  // We need to move them OUT of `loading` div if they are inside.
+  
+  // Re-parent to body to ensure visibility
+  document.body.appendChild(logContainer);
+  document.body.appendChild(toggleBtn);
+  
+  // Set default styles for floating
+  logContainer.style.position = 'fixed';
+  logContainer.style.bottom = '50px';
+  logContainer.style.right = '10px';
+  logContainer.style.width = 'calc(100% - 20px)';
+  logContainer.style.background = 'rgba(0,0,0,0.8)';
+  logContainer.style.color = '#fff';
+  logContainer.style.borderRadius = '8px';
+  
   toggleBtn.addEventListener('click', () => {
-    if (logContainer.style.height === '40px') {
-      logContainer.style.height = 'auto';
-      toggleBtn.textContent = '收起';
-      document.getElementById('logs').style.display = 'block';
+    if (logContainer.style.display === 'none' || logContainer.style.height === '0px') {
+      logContainer.style.display = 'block';
+      logContainer.style.height = '300px'; // Expanded
+      toggleBtn.textContent = '收起日志';
     } else {
-      document.getElementById('logs').style.display = 'none';
-      toggleBtn.textContent = '展开';
+      logContainer.style.display = 'none';
+       // We hide it completely instead of shrinking
+      toggleBtn.textContent = '展开日志';
     }
   });
 }
