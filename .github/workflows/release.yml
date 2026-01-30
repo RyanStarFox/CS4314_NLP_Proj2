@@ -44,7 +44,7 @@ jobs:
           - platform: 'windows-x64'
             os: windows-latest
             target: '' 
-            tauri_args: ''
+            tauri_args: '--bundles nsis'
 
     runs-on: ${{ matrix.os }}
     steps:

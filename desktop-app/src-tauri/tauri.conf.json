@@ -57,7 +57,6 @@
       "certificateThumbprint": null,
       "digestAlgorithm": "sha256",
       "timestampUrl": "",
-      "targets": ["nsis"],
       "nsis": {
         "installMode": "currentUser",
         "languages": ["SimpChinese", "English"]
