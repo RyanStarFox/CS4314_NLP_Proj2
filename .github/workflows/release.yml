@@ -131,7 +131,12 @@ jobs:
           if [ "${{ runner.os }}" == "Windows" ]; then
              # Windows: Use explicit python, rename output, copy metadata, AND bundle source files as data
              echo "Using Python at: $pythonLocation"
-             "$pythonLocation/python" -m PyInstaller --clean --noconfirm --name python-backend --copy-metadata streamlit --copy-metadata chromadb --copy-metadata langchain --copy-metadata langchain-community --add-data "app.py;." --add-data "ui_components.py;." --add-data "config.py;." --add-data "settings_utils.py;." --add-data "pages;pages" --add-data "logo.png;." --distpath desktop-app/python-dist --workpath desktop-app/build app.py
+             
+             # Locate Streamlit path to manually bundle static assets (Fixes FileNotFoundError)
+             ST_PATH=$("$pythonLocation/python" -c "import streamlit, os; print(os.path.dirname(streamlit.__file__))")
+             echo "Streamlit found at: $ST_PATH"
+             
+             "$pythonLocation/python" -m PyInstaller --clean --noconfirm --name python-backend --copy-metadata streamlit --copy-metadata chromadb --copy-metadata langchain --copy-metadata langchain-community --add-data "app.py;." --add-data "ui_components.py;." --add-data "config.py;." --add-data "settings_utils.py;." --add-data "pages;pages" --add-data "logo.png;." --add-data "$ST_PATH/static;streamlit/static" --add-data "$ST_PATH/runtime;streamlit/runtime" --distpath desktop-app/python-dist --workpath desktop-app/build app.py
              
              # Copy necessary data folders if they exist
              if [ -d "vector_db" ]; then cp -r vector_db desktop-app/python-dist/python-backend/; fi
