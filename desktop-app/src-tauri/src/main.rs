@@ -45,27 +45,32 @@ fn get_python_executable() -> PathBuf {
         None
     };
     
-    // macOS app bundle - check various possible locations
-    #[cfg(target_os = "macos")]
-    {
-        // Tauri puts resources in Resources/_up_/python-dist/
-        if let Some(p) = check_path(exe_dir.join("../Resources/_up_/python-dist").join(python_name)) { return p; }
-        
-        // Alternative: directly in Resources/python-dist/
-        if let Some(p) = check_path(exe_dir.join("../Resources/python-dist").join(python_name)) { return p; }
-        
-        // Direct in Resources
-        if let Some(p) = check_path(exe_dir.join("../Resources").join(python_name)) { return p; }
-    }
-    
-    // Check next to executable
+    // 1. Direct check in current directory (often works for Windows portable)
     if let Some(p) = check_path(exe_dir.join(python_name)) { return p; }
-    
-    // Fallback for development
+
+    // 2. Check in `python-dist` (Development mode)
+    // Common in dev when running from src-tauri/target/debug/
+    if let Some(p) = check_path(exe_dir.join("../../python-dist").join(python_name)) { return p; }
     if let Some(p) = check_path(exe_dir.join("../python-dist").join(python_name)) { return p; }
     
-    // Last resort
-    exe_dir.join("../python-dist").join(python_name)
+    // 3. MacOS App Bundle standard locations
+    #[cfg(target_os = "macos")]
+    {
+         if let Some(p) = check_path(exe_dir.join("../Resources/_up_/python-dist").join(python_name)) { return p; }
+         if let Some(p) = check_path(exe_dir.join("../Resources/python-dist").join(python_name)) { return p; }
+         if let Some(p) = check_path(exe_dir.join("../Resources").join(python_name)) { return p; }
+    }
+
+    // 4. Windows specific: In `resources` folder or flattened `_up_`
+    // When using resources in tauri.conf.json like ["../python-dist/**/*"]
+    // Tauri often flattens this into `resources/python-dist` or just copies it.
+    // Let's check likely locations for MSI installations.
+     if let Some(p) = check_path(exe_dir.join("resources/python-dist").join(python_name)) { return p; }
+     if let Some(p) = check_path(exe_dir.join("python-dist").join(python_name)) { return p; }
+     if let Some(p) = check_path(exe_dir.join("_up_/python-dist").join(python_name)) { return p; }
+
+    // Fallback log
+    exe_dir.join("python-dist").join(python_name)
 }
 
 #[tauri::command]
