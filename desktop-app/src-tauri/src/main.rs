@@ -26,51 +26,52 @@ fn get_python_executable() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from("."));
     
     #[cfg(target_os = "windows")]
-    let python_name = "python-backend.exe";
+    let python_binary = "python-backend.exe";
     
     #[cfg(not(target_os = "windows"))]
-    let python_name = "python-backend";
+    let python_binary = "python-backend";
 
-    let check_path = |path: PathBuf| -> Option<PathBuf> {
-        if path.exists() {
-            if path.is_dir() {
-                let exec_in_dir = path.join(python_name);
-                if exec_in_dir.exists() {
-                    return Some(exec_in_dir);
-                }
-            } else {
-                return Some(path);
-            }
+    // PyInstaller 'onedir' creates a folder with the same name as the binary
+    let python_folder = "python-backend";
+
+    let check_path = |base_path: PathBuf| -> Option<PathBuf> {
+        // Case A: onedir structure -> base/python-backend/python-backend.exe
+        let candidate_onedir = base_path.join(python_folder).join(python_binary);
+        if candidate_onedir.exists() {
+             return Some(candidate_onedir);
+        }
+        
+        // Case B: flattened/onefile structure -> base/python-backend.exe
+        let candidate_flat = base_path.join(python_binary);
+        if candidate_flat.exists() {
+             return Some(candidate_flat);
         }
         None
     };
     
-    // 1. Direct check in current directory (often works for Windows portable)
-    if let Some(p) = check_path(exe_dir.join(python_name)) { return p; }
+    // 1. Direct check in current directory
+    if let Some(p) = check_path(exe_dir.clone()) { return p; }
 
-    // 2. Check in `python-dist` (Development mode)
-    // Common in dev when running from src-tauri/target/debug/
-    if let Some(p) = check_path(exe_dir.join("../../python-dist").join(python_name)) { return p; }
-    if let Some(p) = check_path(exe_dir.join("../python-dist").join(python_name)) { return p; }
+    // 2. Dev mode checks
+    if let Some(p) = check_path(exe_dir.join("../../python-dist")) { return p; }
+    if let Some(p) = check_path(exe_dir.join("../python-dist")) { return p; }
     
-    // 3. MacOS App Bundle standard locations
+    // 3. MacOS Bundle checks
     #[cfg(target_os = "macos")]
     {
-         if let Some(p) = check_path(exe_dir.join("../Resources/_up_/python-dist").join(python_name)) { return p; }
-         if let Some(p) = check_path(exe_dir.join("../Resources/python-dist").join(python_name)) { return p; }
-         if let Some(p) = check_path(exe_dir.join("../Resources").join(python_name)) { return p; }
+         if let Some(p) = check_path(exe_dir.join("../Resources/_up_/python-dist")) { return p; }
+         if let Some(p) = check_path(exe_dir.join("../Resources/python-dist")) { return p; }
+         if let Some(p) = check_path(exe_dir.join("../Resources")) { return p; }
     }
 
-    // 4. Windows specific: In `resources` folder or flattened `_up_`
-    // When using resources in tauri.conf.json like ["../python-dist/**/*"]
-    // Tauri often flattens this into `resources/python-dist` or just copies it.
-    // Let's check likely locations for MSI installations.
-     if let Some(p) = check_path(exe_dir.join("resources/python-dist").join(python_name)) { return p; }
-     if let Some(p) = check_path(exe_dir.join("python-dist").join(python_name)) { return p; }
-     if let Some(p) = check_path(exe_dir.join("_up_/python-dist").join(python_name)) { return p; }
+    // 4. Windows Bundled checks
+    // Check likely resource locations for Tauri v1/v2
+    if let Some(p) = check_path(exe_dir.join("resources/python-dist")) { return p; }
+    if let Some(p) = check_path(exe_dir.join("python-dist")) { return p; }
+    if let Some(p) = check_path(exe_dir.join("_up_/python-dist")) { return p; }
 
-    // Fallback log
-    exe_dir.join("python-dist").join(python_name)
+    // Fallback log path (for debugging, point to the deep structure)
+    exe_dir.join("python-dist").join(python_folder).join(python_binary)
 }
 
 #[tauri::command]
