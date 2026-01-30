@@ -1,6 +1,11 @@
 import streamlit as st
 import os
 import base64
+import sys
+
+# Fix path to allow importing modules from root
+sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
+
 import streamlit.components.v1 as components
 import time
 from kb_manager import KBManager

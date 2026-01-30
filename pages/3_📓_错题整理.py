@@ -3,6 +3,12 @@ import time
 import json
 import threading
 import base64
+import os
+import sys
+
+# Fix path to allow importing modules from root
+sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
+
 import streamlit.components.v1 as components
 from question_db import QuestionDB
 from openai import OpenAI

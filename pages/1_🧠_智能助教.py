@@ -2,6 +2,11 @@ import streamlit as st
 import time
 import base64
 import os
+import sys
+
+# Fix path to allow importing modules from root (for PyInstaller)
+sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
+
 import streamlit.components.v1 as components
 from kb_manager import KBManager
 import ui_components

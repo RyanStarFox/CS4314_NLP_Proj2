@@ -2,6 +2,12 @@ import streamlit as st # type: ignore
 import time
 import json
 import base64
+import os
+import sys
+
+# Fix path to allow importing modules from root
+sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
+
 import streamlit.components.v1 as components
 from rag_agent import RAGAgent
 from config import EXERCISE_TOP_K, EXERCISE_TOP_K_TOPIC
