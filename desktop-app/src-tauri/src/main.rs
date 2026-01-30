@@ -1,6 +1,9 @@
 // Prevents additional console window on Windows in release, DO NOT REMOVE!!
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
+
 use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
 use std::env;
@@ -187,11 +190,18 @@ fn start_python_backend(app: &tauri::AppHandle) -> Option<Child> {
     
     let working_dir = python_exe.parent().unwrap_or(&python_exe);
     
-    let mut child = Command::new(&python_exe)
-        .current_dir(working_dir)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
+    let mut cmd = Command::new(&python_exe);
+    cmd.current_dir(working_dir);
+    cmd.stdout(Stdio::piped());
+    cmd.stderr(Stdio::piped());
+
+    #[cfg(target_os = "windows")]
+    {
+        // CREATE_NO_WINDOW
+        cmd.creation_flags(0x08000000);
+    }
+
+    let mut child = cmd.spawn()
         .expect("Failed to spawn python backend");
 
     let pid_msg = format!("Python backend started with PID: {}", child.id());
