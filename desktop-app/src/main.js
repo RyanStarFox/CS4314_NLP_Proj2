@@ -57,9 +57,14 @@ async function waitForStreamlit() {
     
     // If result is string, it's an error message
     if (typeof result === 'string' && portFound) {
-        // Show specific error if we found port but can't connect
-        console.log(`Connection error: ${result}`);
-        updateStatus(`连接失败: ${result} ... (${retryCount}/${MAX_RETRIES})`);
+        console.log(`Connection attempt failed: ${result}`);
+        
+        // Don't scare user immediately, server takes time to bind socket even after printing log
+        if (retryCount < 5) {
+             updateStatus(`服务正在初始化... (${retryCount}/${MAX_RETRIES})`);
+        } else {
+             updateStatus(`连接尝试中... (${retryCount}/${MAX_RETRIES})`);
+        }
     }
     
     await new Promise(resolve => setTimeout(resolve, RETRY_INTERVAL));
