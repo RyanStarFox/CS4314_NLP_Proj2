@@ -48,9 +48,11 @@ if __name__ == "__main__":
             "--global.developmentMode=false",
             f"--server.port={port}",
             "--server.headless=true",
-            "--server.address=127.0.0.1", # Fix loopback issues on Windows
+            "--server.address=127.0.0.1", 
             "--server.enableCORS=false",
             "--server.enableXsrfProtection=false",
+            "--server.enableWebsocketCompression=false",
+            "--browser.gatherUsageStats=false",
             "--", 
             "--run-via-cli"
         ]

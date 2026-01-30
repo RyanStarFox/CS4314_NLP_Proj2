@@ -198,7 +198,7 @@ fn start_python_backend(app: &tauri::AppHandle) -> Option<Child> {
     #[cfg(target_os = "windows")]
     {
         // CREATE_NO_WINDOW
-        cmd.creation_flags(0x08000000);
+        // cmd.creation_flags(0x08000000);
     }
 
     let mut child = cmd.spawn()
