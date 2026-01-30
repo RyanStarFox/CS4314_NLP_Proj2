@@ -4,13 +4,40 @@ import base64
 import os
 import sys
 
+# --- DEBUG LOGGING START ---
+debug_info = []
+debug_info.append(f"CWD: {os.getcwd()}")
+debug_info.append(f"__file__: {__file__}")
+debug_info.append(f"sys.path: {sys.path}")
+try:
+    debug_info.append(f"Dir of __file__: {os.path.dirname(__file__)}")
+    debug_info.append(f"Parent of dir: {os.path.dirname(os.path.dirname(__file__))}")
+    debug_info.append(f"Contents of ..: {os.listdir(os.path.join(os.path.dirname(__file__), '..'))}")
+except Exception as e:
+    debug_info.append(f"Path/Dir error: {e}")
+
+print("\n".join(debug_info))
+try:
+    with st.expander("🛠️ DEBUG INFO", expanded=True):
+        st.code("\n".join(debug_info))
+except:
+    pass
+# --- DEBUG LOGGING END ---
+
 # Fix path to allow importing modules from root (for PyInstaller)
-sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
+# Try multiple strategies to find root
+sys.path.append(os.getcwd())
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 import streamlit.components.v1 as components
-from kb_manager import KBManager
-import ui_components
-from rag_agent import RAGAgent
+try:
+    from kb_manager import KBManager
+    import ui_components
+    from rag_agent import RAGAgent
+except ImportError as e:
+    st.error(f"❌ CRITICAL IMPORT ERROR: {e}")
+    st.info("Check the debug info above to see the search paths.")
+    st.stop()
 
 # Inject JS for keyboard shortcut (Cmd/Ctrl + ,)
 components.html("""
