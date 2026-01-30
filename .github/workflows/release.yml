@@ -129,19 +129,20 @@ jobs:
       # --- BACKEND BUILD ---
       # --- BACKEND BUILD ---
       # --- BACKEND BUILD ---
+      # --- BACKEND BUILD ---
       - name: Build Python Backend
         run: |
           if [ "${{ runner.os }}" == "Windows" ]; then
              # Windows: Use explicit python, rename output, copy metadata, AND bundle source files as data
              echo "Using Python at: $pythonLocation"
-             "$pythonLocation/python" -m PyInstaller --clean --noconfirm --name python-backend --copy-metadata streamlit --copy-metadata chromadb --copy-metadata langchain --copy-metadata langchain-community --add-data "app.py;." --add-data "ui_components.py;." --add-data "config.py;." --add-data "settings_utils.py;." --add-data "pages;pages" --add-data "logo.png;." --distpath desktop-app/python-dist --workpath desktop-app/build --specpath desktop-app app.py
+             "$pythonLocation/python" -m PyInstaller --clean --noconfirm --name python-backend --copy-metadata streamlit --copy-metadata chromadb --copy-metadata langchain --copy-metadata langchain-community --add-data "app.py;." --add-data "ui_components.py;." --add-data "config.py;." --add-data "settings_utils.py;." --add-data "pages;pages" --add-data "logo.png;." --distpath desktop-app/python-dist --workpath desktop-app/build app.py
              
              # Copy necessary data folders if they exist
              if [ -d "vector_db" ]; then cp -r vector_db desktop-app/python-dist/python-backend/; fi
              if [ -d "data" ]; then cp -r data desktop-app/python-dist/python-backend/; fi
           else
              # Mac/Linux: Standard invocation with rename AND copy metadata AND bundle source files
-             pyinstaller --clean --noconfirm --name python-backend --copy-metadata streamlit --copy-metadata chromadb --copy-metadata langchain --copy-metadata langchain-community --add-data "app.py:." --add-data "ui_components.py:." --add-data "config.py:." --add-data "settings_utils.py:." --add-data "pages:pages" --add-data "logo.png:." --distpath desktop-app/python-dist --workpath desktop-app/build --specpath desktop-app app.py
+             pyinstaller --clean --noconfirm --name python-backend --copy-metadata streamlit --copy-metadata chromadb --copy-metadata langchain --copy-metadata langchain-community --add-data "app.py:." --add-data "ui_components.py:." --add-data "config.py:." --add-data "settings_utils.py:." --add-data "pages:pages" --add-data "logo.png:." --distpath desktop-app/python-dist --workpath desktop-app/build app.py
              chmod +x desktop-app/python-dist/python-backend/python-backend
              
              # Copy necessary data folders
