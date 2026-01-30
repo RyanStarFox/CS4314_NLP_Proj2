@@ -2,6 +2,11 @@ import streamlit as st
 import os
 import sys
 import socket
+import mimetypes
+
+# FIX: Windows Registry Content-Type issue causing white screen
+mimetypes.add_type('application/javascript', '.js')
+mimetypes.add_type('text/css', '.css')
 
 def find_free_port():
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
