@@ -19,6 +19,12 @@ try:
     import rag_agent
     import question_db
     import text_splitter
+    
+    # Document parsers (implicit dependencies of document_loader.py)
+    import docx2txt
+    import pptx
+    import pdfplumber
+    import pandas
 except ImportError:
     pass 
 # -------------------------
