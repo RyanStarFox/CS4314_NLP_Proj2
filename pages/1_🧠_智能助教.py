@@ -43,6 +43,63 @@ except:
     pass
 # --- DEBUG LOGGING END ---
 
+# --- DEVELOPER DIAGNOSTICS ---
+st.divider()
+with st.expander("🔧 开发者诊断 (Developer Diagnostics)", expanded=False):
+    st.write("Runtime Environment Probe")
+    
+    modules_to_check = ['rank_bm25', 'docx2txt', 'pdfplumber', 'pptx', 'kb_manager', 'rag_agent']
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("检查模块状态 (Check Modules)"):
+            import importlib
+            import pkg_resources
+            import sys
+            
+            check_results = []
+            for mod_name in modules_to_check:
+                status = "❌ MISSING"
+                details = ""
+                
+                # 1. Try Import
+                try:
+                    # rank_bm25 is special, sometimes imported as rank_bm25
+                    mod = importlib.import_module(mod_name)
+                    status = "✅ OK"
+                    # Try to get file path safely
+                    if hasattr(mod, '__file__'):
+                        details += f"File: {mod.__file__}\n"
+                    else:
+                        details += "File: Built-in/Unknown\n"
+                        
+                except ImportError as e:
+                    details += f"ImportError: {e}\n"
+                    status = "❌ MISSING"
+                except Exception as e:
+                    details += f"Error: {e}\n"
+                    status = "⚠️ ERROR"
+                    
+                # 2. Try Spec
+                try:
+                    spec = importlib.util.find_spec(mod_name)
+                    if spec:
+                        details += f"Spec: Found ({spec.origin})\n"
+                    else:
+                        details += "Spec: Not Found\n"
+                except:
+                    pass
+                    
+                check_results.append(f"**{mod_name}**: {status}\n```text\n{details}\n```")
+                
+            st.markdown("\n".join(check_results))
+            
+    st.write("---")
+    st.write("System Paths:")
+    st.code(f"CWD: {os.getcwd()}")
+    st.code(f"sys.path: {sys.path}")
+# -----------------------------
+
 # Fix path: Intelligent Search for Project Root
 try:
     current_scan_dir = os.path.dirname(os.path.abspath(__file__))
