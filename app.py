@@ -19,12 +19,17 @@ try:
     import rag_agent
     import question_db
     import text_splitter
+    import document_loader
+    import vector_store
     
-    # Document parsers (implicit dependencies of document_loader.py)
+    # Document parsers (implicit dependencies)
     import docx2txt
     import pptx
     import pdfplumber
     import pandas
+    
+    # Search algorithm
+    import rank_bm25
 except ImportError:
     pass 
 # -------------------------
