@@ -4,13 +4,24 @@ import sys
 import socket
 import mimetypes
 
-# FIX: Windows Registry Content-Type issue causing white screen
+# Fix for javascript files returning text/plain on Windows
 mimetypes.add_type('application/javascript', '.js')
 mimetypes.add_type('text/css', '.css')
 
 # Debug MIME
 print(f"DEBUG: JS MIME type is: {mimetypes.guess_type('test.js')[0]}")
 sys.stdout.flush()
+
+# --- PyInstaller Hooks ---
+# Force PyInstaller to bundle these modules (referenced in pages/)
+try:
+    import kb_manager
+    import rag_agent
+    import question_db
+    import text_splitter
+except ImportError:
+    pass 
+# -------------------------
 
 def find_free_port():
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
