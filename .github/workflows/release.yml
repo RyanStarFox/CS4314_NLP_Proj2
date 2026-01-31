@@ -134,7 +134,7 @@ jobs:
              
              # Explicitly add Streamlit static assets AND critical modules
              ST_PATH=$("$pythonLocation/python" -c "import streamlit, os; print(os.path.dirname(streamlit.__file__))")
-             "$pythonLocation/python" -m PyInstaller --clean --noconfirm --name python_backend --windowed --onedir --contents-directory . --add-data "$ST_PATH/static;streamlit/static" --add-data "$ST_PATH/runtime;streamlit/runtime" --add-data "pages;pages" --add-data "logo.png;." --add-data ".env;." --hidden-import=rank_bm25 --hidden-import=docx2txt --hidden-import=pptx --hidden-import=pdfplumber --hidden-import=kb_manager --hidden-import=rag_agent --hidden-import=question_db --hidden-import=document_loader --hidden-import=vector_store --hidden-import=text_splitter app.py --distpath desktop-app/python-dist --workpath desktop-app/build
+             "$pythonLocation/python" -m PyInstaller --clean --noconfirm --name python_backend --windowed --onedir --contents-directory . --add-data "$ST_PATH/static;streamlit/static" --add-data "$ST_PATH/runtime;streamlit/runtime" --add-data "pages;pages" --add-data "logo.png;." --hidden-import=rank_bm25 --hidden-import=docx2txt --hidden-import=pptx --hidden-import=pdfplumber --hidden-import=kb_manager --hidden-import=rag_agent --hidden-import=question_db --hidden-import=document_loader --hidden-import=vector_store --hidden-import=text_splitter app.py --distpath desktop-app/python-dist --workpath desktop-app/build
              
              # Copy necessary data folders if they exist
              if [ -d "vector_db" ]; then cp -r vector_db desktop-app/python-dist/python-backend/; fi
