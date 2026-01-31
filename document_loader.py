@@ -1,6 +1,5 @@
 import os
 from typing import List, Dict, Optional
-
 import docx2txt
 from PyPDF2 import PdfReader
 from pptx import Presentation
@@ -54,7 +53,7 @@ class DocumentLoader:
         except Exception as e:
             print(f" [图片理解] 生成失败: {e}")
             return ""
-
+    
     def load_pdf(self, file_path: str) -> List[Dict]:
         """加载PDF文件，按页返回内容 (包含图片理解)"""
         pages = []

@@ -5,13 +5,31 @@ import os
 import sys
 
 # --- DEBUG LOGGING START ---
+import pkg_resources
+import importlib.util
+
 debug_info = []
 debug_info.append(f"CWD: {os.getcwd()}")
 debug_info.append(f"__file__: {__file__}")
 debug_info.append(f"sys.path: {sys.path}")
+
+# Check for specific problematic modules
+target_modules = ['docx2txt', 'rank_bm25', 'numpy', 'pandas', 'kb_manager']
+for mod in target_modules:
+    try:
+        spec = importlib.util.find_spec(mod)
+        debug_info.append(f"Spec for {mod}: {spec}")
+    except Exception as e:
+        debug_info.append(f"Spec check failed for {mod}: {e}")
+        
+    try:
+        dist = pkg_resources.get_distribution(mod)
+        debug_info.append(f"Dist for {mod}: {dist.location} ({dist.version})")
+    except Exception as e:
+        debug_info.append(f"Dist check failed for {mod}: {e}")
+
 try:
     debug_info.append(f"Dir of __file__: {os.path.dirname(__file__)}")
-    debug_info.append(f"Parent of dir: {os.path.dirname(os.path.dirname(__file__))}")
     debug_info.append(f"Contents of ..: {os.listdir(os.path.join(os.path.dirname(__file__), '..'))}")
 except Exception as e:
     debug_info.append(f"Path/Dir error: {e}")
