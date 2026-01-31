@@ -4,7 +4,8 @@ import os
 import sys
 
 # Fix path to allow importing modules from root
-sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
+sys.path.append(os.getcwd())
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 import streamlit.components.v1 as components
 import ui_components
@@ -228,7 +229,7 @@ else:
              """)
         
         st.markdown("---")
-        st.markdown("### 🎓 提问小以此")
+        st.markdown("### 🎓 提问小贴士")
         st.success("🌟 秘诀：把问题问得越具体，得到的答案就越好！比如：\n\n❌ “讲讲力学”\n✅ “请结合 Lecture 3 的内容，解释一下牛顿第二定律在斜面滑块问题中的应用”")
 
     elif section == "practice":

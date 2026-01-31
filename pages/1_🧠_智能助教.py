@@ -16,7 +16,8 @@ try:
 except Exception as e:
     debug_info.append(f"Path/Dir error: {e}")
 
-print("\n".join(debug_info))
+# Removed print to avoid Windows GBK error
+
 try:
     with st.expander("🛠️ DEBUG INFO", expanded=True):
         st.code("\n".join(debug_info))
@@ -24,10 +25,28 @@ except:
     pass
 # --- DEBUG LOGGING END ---
 
-# Fix path to allow importing modules from root (for PyInstaller)
-# Try multiple strategies to find root
-sys.path.append(os.getcwd())
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+# Fix path: Intelligent Search for Project Root
+try:
+    current_scan_dir = os.path.dirname(os.path.abspath(__file__))
+    found_root = None
+    # Scan up to 4 levels
+    for i in range(4):
+        if os.path.exists(os.path.join(current_scan_dir, "kb_manager.py")):
+            found_root = current_scan_dir
+            break
+        current_scan_dir = os.path.dirname(current_scan_dir)
+
+    if found_root:
+        if found_root not in sys.path:
+            sys.path.insert(0, found_root) # Insert at beginning
+        # Add to debug log without printing
+        # st.success(f"✅ Auto-fixed path: {found_root}")
+    else:
+        # Fallback strategies
+        sys.path.append(os.getcwd())
+        sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+except Exception as e:
+    st.error(f"Path Fix Error: {e}")
 
 import streamlit.components.v1 as components
 try:
